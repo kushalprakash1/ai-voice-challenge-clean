@@ -5,6 +5,7 @@ from dataclasses import dataclass
 import pytest
 
 from voiceprobe.v3.asterisk_live import (
+    _recording_context,
     project_v3_flow_snapshot,
     scenario_termination_failure_reason,
 )
@@ -53,6 +54,34 @@ def test_projection_does_not_invent_legacy_day_or_time() -> None:
     assert result.offered_day is None
     assert result.offered_time is None
     assert result.accepted_slot_text == "2:30 PM"
+
+
+def test_accepted_socket_closes_when_recorder_setup_fails(monkeypatch) -> None:
+    class FakeConnection:
+        closed = False
+
+        def close(self) -> None:
+            self.closed = True
+
+    connection = FakeConnection()
+
+    class FailingRecorder:
+        def __init__(self, **kwargs) -> None:
+            del kwargs
+            raise RuntimeError("synthetic recorder setup failure")
+
+    monkeypatch.setattr(
+        "voiceprobe.v3.asterisk_live.RunArtifactRecorder",
+        FailingRecorder,
+    )
+
+    with (
+        pytest.raises(RuntimeError, match="synthetic recorder setup failure"),
+        _recording_context(connection, root=None, scenario=None),
+    ):
+        pass
+
+    assert connection.closed is True
 
 
 def test_projection_treats_v3_complete_as_authoritative_booking_confirmation() -> None:

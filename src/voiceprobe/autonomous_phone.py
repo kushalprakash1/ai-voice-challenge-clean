@@ -13,6 +13,7 @@ patient is reasoning or speaking. Full-duplex/barge-in comes later.
 from __future__ import annotations
 
 import argparse
+import ipaddress
 import queue
 import socket
 import threading
@@ -33,10 +34,6 @@ from voiceprobe.artifacts.recorder import RunArtifactRecorder
 from voiceprobe.conversation.session import PatientSession
 from voiceprobe.conversation.turns import CompletedTurn
 from voiceprobe.interpreters.ollama import OllamaConversationInterpreter
-from voiceprobe.reasoning.session_v2 import (
-    ReasoningV2PatientSession,
-    reasoning_v2_enabled_from_environment,
-)
 from voiceprobe.media.live_asr import (
     AUDIO_SAMPLE_RATE_HZ,
     TYPE_DTMF,
@@ -46,6 +43,10 @@ from voiceprobe.media.live_asr import (
     build_transcriber,
     pcm16_to_float32,
     recv_exact,
+)
+from voiceprobe.reasoning.session_v2 import (
+    ReasoningV2PatientSession,
+    reasoning_v2_enabled_from_environment,
 )
 from voiceprobe.scenarios.catalog import (
     DEFAULT_SCENARIO_ID,
@@ -74,6 +75,22 @@ DEFAULT_OLLAMA_URL = "http://127.0.0.1:11434/api/chat"
 DEFAULT_VOICE = "af_heart"
 
 ECHO_GUARD_SECONDS = 0.35
+
+
+def validate_listener_host(value: str) -> str:
+    """Allow only the IPv4 loopback listener used by unauthenticated media."""
+    if value != DEFAULT_HOST:
+        raise argparse.ArgumentTypeError(
+            "AudioSocket listener host must be 127.0.0.1."
+        )
+    try:
+        if not ipaddress.ip_address(value).is_loopback:
+            raise ValueError
+    except ValueError as error:
+        raise argparse.ArgumentTypeError(
+            "AudioSocket listener host must be loopback."
+        ) from error
+    return value
 
 
 # High-frequency responses produced verbatim by the deterministic
@@ -1306,6 +1323,7 @@ def _build_parser() -> argparse.ArgumentParser:
 
     parser.add_argument(
         "--host",
+        type=validate_listener_host,
         default=DEFAULT_HOST,
     )
     parser.add_argument(

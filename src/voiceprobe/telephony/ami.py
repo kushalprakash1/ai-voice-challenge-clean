@@ -661,14 +661,34 @@ class AsteriskAMIClient:
                 continue
 
             event_unique_id = message.get("Uniqueid")
-            event_channel = message.get("Channel")
-
-            if event_unique_id != unique_id and event_channel != channel:
+            if event_unique_id != unique_id:
                 continue
 
             return _hangup_result_from_message(message)
 
         raise AMIProtocolError("AMI Hangup event correlation limit exceeded.")
+
+    def hangup(
+        self,
+        *,
+        unique_id: str,
+        channel: str,
+    ) -> AMIMessage:
+        """Request termination of one originated channel."""
+        self._require_authenticated()
+        _validate_header_value(unique_id, name="Asterisk Uniqueid")
+        _validate_header_value(channel, name="Asterisk channel")
+
+        response = self._request(
+            (
+                ("Action", "Hangup"),
+                ("Channel", channel),
+                ("Uniqueid", unique_id),
+            )
+        )
+        if response.response != "Success":
+            raise AMIProtocolError("Asterisk rejected the Hangup request.")
+        return response
 
     def logoff(self) -> None:
         """Log off when authenticated, then close the socket."""

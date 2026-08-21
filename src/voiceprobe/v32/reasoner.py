@@ -18,8 +18,8 @@ from voiceprobe.v3.models import (
 
 from .context import ReasoningContext, normalize_history
 from .schemas import (
-    ContextualProposal,
     PROPOSAL_JSON_SCHEMA,
+    ContextualProposal,
 )
 from .validator import ActionValidator
 
@@ -45,6 +45,15 @@ class ReasoningTrace:
     @property
     def total_ms(self) -> float:
         return self.reasoning_ms
+
+
+def _redacted_validation_error(error: ValidationError) -> str:
+    """Summarize validation failure locations without retaining input values."""
+    locations = tuple(
+        ".".join(str(part) for part in detail.get("loc", ()))
+        for detail in error.errors()
+    )
+    return f"validation_failed error_count={len(locations)} locations={locations}"
 
 
 _SYSTEM = """You are VoiceProbe's bounded contextual reasoning layer.
@@ -130,7 +139,7 @@ class ContextualReasoner:
         try:
             proposal = ContextualProposal.model_validate(raw)
         except ValidationError as exc:
-            validation_error = str(exc)
+            validation_error = _redacted_validation_error(exc)
 
             # Preserve the typed trace shape for observability while making
             # the proposal explicitly non-authoritative and unusable.

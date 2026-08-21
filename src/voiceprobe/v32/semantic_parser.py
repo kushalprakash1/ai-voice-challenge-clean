@@ -11,11 +11,11 @@ from typing import Any, Protocol
 from pydantic import ValidationError
 
 from .semantic_frame import (
+    SEMANTIC_FRAME_SCHEMA,
     Certainty,
     Commitment,
     Focus,
     Operation,
-    SEMANTIC_FRAME_SCHEMA,
     SemanticFrame,
     SpeechAct,
 )
@@ -37,6 +37,15 @@ class SemanticParseTrace:
     frame: SemanticFrame
     latency_ms: float
     validation_error: str | None = None
+
+
+def _redacted_validation_error(error: ValidationError) -> str:
+    """Summarize validation failure locations without retaining input values."""
+    locations = tuple(
+        ".".join(str(part) for part in detail.get("loc", ()))
+        for detail in error.errors()
+    )
+    return f"validation_failed error_count={len(locations)} locations={locations}"
 
 
 _SYSTEM = """You are the semantic parser inside a patient phone agent.
@@ -256,7 +265,7 @@ class SemanticParser:
                     certainty=Certainty.LOW,
                 ),
                 latency_ms=latency,
-                validation_error=str(exc),
+                validation_error=_redacted_validation_error(exc),
             )
 
         return SemanticParseTrace(

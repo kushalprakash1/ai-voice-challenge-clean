@@ -1,7 +1,7 @@
 """Policy constraints for VoiceProbe assessment calls."""
 
 import re
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 from voiceprobe.safety import destination_for_plan
 
@@ -24,6 +24,7 @@ class CallPolicy:
     max_call_duration_seconds: int = DEFAULT_MAX_CALL_DURATION_SECONDS
     max_suite_calls: int = DEFAULT_MAX_SUITE_CALLS
     dry_run: bool = True
+    _destination_snapshot: str = field(init=False, repr=False, compare=False)
 
     def __post_init__(self) -> None:
         if not isinstance(self.originating_number, str) or not _E164_PATTERN.fullmatch(
@@ -33,7 +34,10 @@ class CallPolicy:
                 "Originating number must use E.164 format, for example +12025550101."
             )
 
-        if self.originating_number == destination_for_plan():
+        destination = destination_for_plan()
+        object.__setattr__(self, "_destination_snapshot", destination)
+
+        if self.originating_number == destination:
             raise InvalidCallPolicyError(
                 "Originating number cannot be the assessment destination."
             )
@@ -64,4 +68,4 @@ class CallPolicy:
     @property
     def destination(self) -> str:
         """Return the only destination VoiceProbe is authorized to call."""
-        return destination_for_plan()
+        return self._destination_snapshot

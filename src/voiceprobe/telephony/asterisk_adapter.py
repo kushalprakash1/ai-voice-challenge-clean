@@ -37,12 +37,11 @@ from voiceprobe.autonomous_phone import (
 )
 from voiceprobe.conversation.session import PatientSession
 from voiceprobe.interpreters.ollama import OllamaConversationInterpreter
+from voiceprobe.policy import MAX_CALL_DURATION_SECONDS, CallPolicy
 from voiceprobe.reasoning.session_v2 import (
     ReasoningV2PatientSession,
     reasoning_v2_enabled_from_environment,
 )
-from voiceprobe.policy import CallPolicy
-from voiceprobe.policy import MAX_CALL_DURATION_SECONDS
 from voiceprobe.runner import (
     AssessmentCallRequest,
     AssessmentCallResult,
@@ -202,6 +201,15 @@ class _AMIClient(Protocol):
         """Wait for the correlated Hangup event."""
         ...
 
+    def hangup(
+        self,
+        *,
+        unique_id: str,
+        channel: str,
+    ) -> None:
+        """Request termination of the originated channel."""
+        ...
+
     def close(self) -> None:
         """Close the AMI transport."""
         ...
@@ -242,6 +250,7 @@ class _MonitoredOriginate:
         self._client: _AMIClient | None = None
         self._result: OriginateResult | None = None
         self._invoked = False
+        self._hangup_requested = False
 
     def __call__(self) -> OriginateResult:
         """Originate once while retaining the authenticated AMI connection."""
@@ -296,6 +305,25 @@ class _MonitoredOriginate:
 
         if client is not None:
             client.close()
+
+    def hangup_best_effort(self) -> None:
+        """Request hangup once, preserving any original media failure."""
+        if self._hangup_requested:
+            return
+        self._hangup_requested = True
+
+        client = self._client
+        result = self._result
+        if client is None or result is None:
+            return
+
+        try:
+            client.hangup(
+                unique_id=result.asterisk_unique_id,
+                channel=result.channel,
+            )
+        except Exception:
+            return
 
 
 def _default_ami_client_factory(
@@ -437,50 +465,50 @@ class AsteriskAssessmentCallAdapter:
                 call_id,
                 originate,
             )
+
+            if outcome.call_id != call_id:
+                raise CallExecutionError(
+                    "AudioSocket call ID did not match the authorized attempt."
+                )
+
+            if outcome.originate.audiosocket_call_id != call_id:
+                raise CallExecutionError(
+                    "AMI originate result did not match the authorized call ID."
+                )
+
+            artifact_run_id = outcome.artifact_run_id.strip()
+
+            if not artifact_run_id:
+                raise CallExecutionError(
+                    "Asterisk media execution returned an empty artifact run ID."
+                )
+
+            provider_call_id = outcome.originate.asterisk_unique_id.strip()
+
+            if not provider_call_id:
+                raise CallExecutionError("Asterisk originate returned an empty Uniqueid.")
+
+            if outcome.duration_seconds < 0:
+                raise CallExecutionError(
+                    "Asterisk media execution returned a negative duration."
+                )
+
+            return AssessmentCallResult(
+                provider_call_id=provider_call_id,
+                artifact_run_id=artifact_run_id,
+                duration_seconds=outcome.duration_seconds,
+                provider_cost_usd=None,
+                assessment_succeeded=outcome.objective_complete,
+                failure_reason=outcome.failure_reason,
+            )
+        except BaseException:
+            originate.hangup_best_effort()
+            raise
         finally:
             # Retain AMI throughout media execution so the correlated Hangup
             # event remains observable. Closing AMI itself does not request
             # a call hangup.
             originate.close()
-
-        if outcome.call_id != call_id:
-            raise CallExecutionError(
-                "AudioSocket call ID did not match the authorized attempt."
-            )
-
-        if outcome.originate.audiosocket_call_id != call_id:
-            raise CallExecutionError(
-                "AMI originate result did not match the authorized call ID."
-            )
-
-        artifact_run_id = outcome.artifact_run_id.strip()
-
-        if not artifact_run_id:
-            raise CallExecutionError(
-                "Asterisk media execution returned an empty artifact run ID."
-            )
-
-        provider_call_id = outcome.originate.asterisk_unique_id.strip()
-
-        if not provider_call_id:
-            raise CallExecutionError("Asterisk originate returned an empty Uniqueid.")
-
-        if outcome.duration_seconds < 0:
-            raise CallExecutionError(
-                "Asterisk media execution returned a negative duration."
-            )
-
-        return AssessmentCallResult(
-            # The runner calls this field provider_call_id. For the current
-            # Asterisk transport, Asterisk Uniqueid is the strongest correlated
-            # external call-control identifier available at this boundary.
-            provider_call_id=provider_call_id,
-            artifact_run_id=artifact_run_id,
-            duration_seconds=outcome.duration_seconds,
-            provider_cost_usd=None,
-            assessment_succeeded=outcome.objective_complete,
-            failure_reason=outcome.failure_reason,
-        )
 
     def _execute_v3_media_call(
         self,

@@ -20,7 +20,7 @@ dependencies = [
 ]
 
 [project.scripts]
-voiceprobe = "voiceprobe:main"
+voiceprobe = "voiceprobe.cli:app"
 
 [build-system]
 requires = ["uv_build>=0.12.5,<0.13.0"]

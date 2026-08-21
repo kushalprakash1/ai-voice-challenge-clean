@@ -35,8 +35,8 @@ def test_manual_corpus_redacts_human_identity() -> None:
     assert call.call_id == "manual-001"
     assert "<CALLER_NAME>" in joined
     assert "<DOB>" in joined
-    assert "Kushal" not in joined
-    assert "April 5th, 2001" not in joined
+    assert "Synthetic Caller" not in joined
+    assert "January 1st, 1990" not in joined
 
 
 def test_trace_loader_measures_decision_to_audio_start(tmp_path: Path) -> None:

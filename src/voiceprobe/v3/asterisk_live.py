@@ -20,6 +20,7 @@ import socket
 import threading
 import time
 from collections.abc import Callable, Mapping
+from contextlib import contextmanager
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -37,39 +38,37 @@ from voiceprobe.runner import AssessmentCallRequest, CallExecutionError
 from voiceprobe.scenarios.catalog import get_scenario
 from voiceprobe.telephony.ami import AsteriskHangupResult, OriginateResult
 
-from .live_monitor import LiveAudioMonitor
-
+from .accent import (
+    ACCENT_CHATTERBOX_KOREAN_HEAVY,
+    ACCENT_MELO_INDIA,
+    DEFAULT_CACHE_ROOT,
+    AccentCache,
+    accent_cache_preflight,
+    accent_mode_from_environment,
+    warm_melo_india_renderer,
+)
 from .audiosocket_kokoro import (
     AudioSocketKokoroConfig,
     AudioSocketKokoroSpeechTask,
     AudioSocketV3MediaBoundary,
     KokoroTelephonyRenderer,
 )
+from .audiosocket_pipecat import build_audiosocket_flux_input_worker
 from .background import (
     BACKGROUND_SEED,
     background_mode_from_environment,
     background_snr_from_environment,
     validate_background_asset,
 )
-from .audiosocket_pipecat import build_audiosocket_flux_input_worker
-from .accent import (
-    ACCENT_MELO_INDIA,
-    ACCENT_CHATTERBOX_KOREAN_HEAVY,
-    DEFAULT_CACHE_ROOT,
-    AccentCache,
-    accent_cache_preflight,
-    warm_melo_india_renderer,
-    accent_mode_from_environment,
-)
 from .flow_controller import SchedulingFlowController
+from .flow_state import FlowSnapshot
+from .live_monitor import LiveAudioMonitor
 from .personas import (
     PersonaDecisionOverlay,
     PersonaRuntime,
     persona_runtime_from_environment,
 )
-from .flow_state import FlowSnapshot
 from .production import PipecatRuntimeBridge, build_production_flux_service
-
 
 DEFAULT_FLUX_CONNECT_TIMEOUT_SECONDS = 10.0
 SOCKET_POLL_SECONDS = 0.10
@@ -152,6 +151,22 @@ class V3AsteriskMediaResult:
     offered_day: str | None
     offered_time: str | None
     failure_reason: str | None
+
+
+@contextmanager
+def _recording_context(
+    connection: socket.socket,
+    *,
+    root: Path,
+    scenario: Any,
+):
+    """Own the accepted socket while recorder setup and media run."""
+    try:
+        with RunArtifactRecorder(root=root, scenario=scenario) as recorder:
+            yield recorder
+    except BaseException:
+        connection.close()
+        raise
 
 
 def project_v3_flow_snapshot(
@@ -983,7 +998,11 @@ def execute_v3_asterisk_media(
                 "to the local AudioSocket listener in time."
             ) from error
 
-        with RunArtifactRecorder(root=artifact_root, scenario=scenario) as recorder:
+        with _recording_context(
+            connection,
+            root=artifact_root,
+            scenario=scenario,
+        ) as recorder:
             recorder.record_event(
                 "suite_adapter_call_started",
                 execution_id=request.execution_id,

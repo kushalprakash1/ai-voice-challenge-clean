@@ -85,6 +85,11 @@ class FakeAMIClient:
     def close(self) -> None:
         self.events.append("ami_close")
 
+    def hangup(self, *, unique_id: str, channel: str) -> None:
+        assert unique_id == "asterisk-123.456"
+        assert channel.startswith("Local/")
+        self.events.append("ami_hangup")
+
 
 def build_adapter(
     events: list[str],
@@ -279,3 +284,61 @@ def test_media_call_id_mismatch_is_rejected() -> None:
         adapter.execute_call(make_request())
 
     assert events.count("ami_originate") == 1
+    assert "ami_hangup" in events
+
+
+def test_media_failure_requests_hangup_before_closing_ami() -> None:
+    events: list[str] = []
+
+    def failing_media(
+        request: AssessmentCallRequest,
+        call_id: UUID,
+        originate: Callable[[], OriginateResult],
+    ) -> AsteriskMediaOutcome:
+        del request, call_id
+        originate()
+        raise RuntimeError("synthetic media setup failure")
+
+    adapter = build_adapter(events, failing_media)
+
+    with pytest.raises(RuntimeError, match="synthetic media setup failure"):
+        adapter.execute_call(make_request())
+
+    assert events[-2:] == ["ami_hangup", "ami_close"]
+
+
+def test_hangup_failure_does_not_mask_original_media_failure() -> None:
+    events: list[str] = []
+
+    class HangupFailingAMIClient(FakeAMIClient):
+        def hangup(self, *, unique_id: str, channel: str) -> None:
+            super().hangup(unique_id=unique_id, channel=channel)
+            raise RuntimeError("synthetic_hangup_cleanup_failure")
+
+    fake_client = HangupFailingAMIClient(events)
+
+    def failing_media(
+        request: AssessmentCallRequest,
+        call_id: UUID,
+        originate: Callable[[], OriginateResult],
+    ) -> AsteriskMediaOutcome:
+        del request, call_id
+        originate()
+        raise RuntimeError("synthetic_original_media_failure")
+
+    adapter = AsteriskAssessmentCallAdapter(
+        ami_config=AsteriskAMIConfig(
+            username="voiceprobe",
+            secret="synthetic-test-secret",
+        ),
+        expected_originating_number=CALLER,
+        ami_client_factory=lambda config: fake_client,
+        call_id_factory=lambda: CALL_ID,
+        media_executor=failing_media,
+    )
+
+    with pytest.raises(RuntimeError, match="synthetic_original_media_failure"):
+        adapter.execute_call(make_request())
+
+    assert events.count("ami_hangup") == 1
+    assert events[-1] == "ami_close"

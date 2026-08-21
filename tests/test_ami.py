@@ -136,6 +136,33 @@ def test_message_lookup_is_case_insensitive() -> None:
     assert message.get("ping") == "Pong"
 
 
+def test_wait_for_hangup_requires_matching_uniqueid() -> None:
+    fake = FakeSocket(
+        [
+            b"Asterisk Call Manager/11.0.0\r\n",
+            b"Response: Success\r\nMessage: Authentication accepted\r\n\r\n",
+            (
+                b"Event: Hangup\r\nUniqueid: other\r\n"
+                b"Channel: Local/target@voiceprobe-test\r\n\r\n"
+            ),
+            (
+                b"Event: Hangup\r\nUniqueid: target\r\n"
+                b"Channel: Local/other@voiceprobe-test\r\nCause: 16\r\n\r\n"
+            ),
+        ]
+    )
+    client = AsteriskAMIClient(config(), connection_factory=factory_for(fake))
+    client.connect()
+    client.login(events="call")
+
+    result = client.wait_for_hangup(
+        unique_id="target",
+        channel="Local/target@voiceprobe-test",
+    )
+
+    assert result.unique_id == "target"
+
+
 def test_parse_ami_message() -> None:
     message = parse_ami_message(b"Response: Success\r\nPing: Pong")
 

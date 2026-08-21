@@ -133,4 +133,29 @@ def test_reasoner_fails_closed_on_invalid_model_output():
     )
     assert trace.decision.confidence == 0.0
     assert trace.validation_error is not None
-    assert "less than or equal to 1" in trace.validation_error
+    assert "less than or equal to 1" not in trace.validation_error
+    assert "100" not in trace.validation_error
+
+
+def test_invalid_model_trace_redacts_rejected_values():
+    sentinel = "SYNTHETIC_PRIVATE_SENTINEL"
+    reasoner = ContextualReasoner(
+        backend=FakeBackend({
+            "meaning": sentinel,
+            "risk": "low",
+            "action": "answer",
+            "grounding": "current_goal",
+            "fact_key": "none",
+            "response_text": sentinel,
+            "confidence": 100,
+        }),
+    )
+
+    trace = asyncio.run(
+        reasoner.reason(
+            remote_turn=sentinel,
+            snapshot=snapshot(),
+        )
+    )
+
+    assert sentinel not in (trace.validation_error or "")

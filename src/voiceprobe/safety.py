@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import os
+import re
 
 from dotenv import dotenv_values
 
@@ -10,10 +11,19 @@ EXAMPLE_DESTINATION_NUMBER = "+12025550100"
 DESTINATION_ENV = "VOICEPROBE_DESTINATION_NUMBER"
 # Compatibility name for dry-run plans and existing callers.
 ALLOWED_TEST_NUMBER = EXAMPLE_DESTINATION_NUMBER
+_E164_PATTERN = re.compile(r"^\+[1-9][0-9]{7,14}$")
 
 
 class UnsafeDestinationError(ValueError):
     """Raised when a call targets anything other than the configured line."""
+
+
+def _validate_e164(destination: str) -> str:
+    if not isinstance(destination, str) or _E164_PATTERN.fullmatch(destination) is None:
+        raise UnsafeDestinationError(
+            "Outbound destination must use strict E.164 format."
+        )
+    return destination
 
 
 def configured_destination() -> str | None:
@@ -31,7 +41,7 @@ def configured_destination() -> str | None:
 
 def destination_for_plan() -> str:
     """Use a fictional destination only for non-live planning."""
-    return configured_destination() or EXAMPLE_DESTINATION_NUMBER
+    return _validate_e164(configured_destination() or EXAMPLE_DESTINATION_NUMBER)
 
 
 def require_live_destination() -> str:
@@ -41,6 +51,7 @@ def require_live_destination() -> str:
         raise UnsafeDestinationError(
             f"Live calls require {DESTINATION_ENV} to be configured explicitly."
         )
+    _validate_e164(destination)
     if destination == EXAMPLE_DESTINATION_NUMBER:
         raise UnsafeDestinationError(
             f"{DESTINATION_ENV} must not use the fictional example number."
@@ -56,6 +67,7 @@ def validate_destination(destination: str) -> str:
     call safety boundary.
     """
     expected = destination_for_plan()
+    _validate_e164(destination)
     if destination != expected:
         raise UnsafeDestinationError(
             "Outbound destination does not match the configured destination."

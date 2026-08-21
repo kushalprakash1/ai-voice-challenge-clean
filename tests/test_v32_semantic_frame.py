@@ -125,6 +125,7 @@ def test_invalid_model_object_fails_closed():
     })
 
     assert trace.validation_error is not None
+    assert "banana" not in trace.validation_error
 
     assert (
         route_semantic_frame(trace.frame).route

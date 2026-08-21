@@ -101,3 +101,8 @@ def test_phone_parser_defaults_to_original_scenario() -> None:
     args = _build_parser().parse_args([])
 
     assert args.scenario == DEFAULT_SCENARIO_ID
+
+
+def test_phone_parser_rejects_non_loopback_listener() -> None:
+    with pytest.raises(SystemExit):
+        _build_parser().parse_args(["--host", "0.0.0.0"])
