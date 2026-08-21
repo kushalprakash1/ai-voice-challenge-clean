@@ -74,16 +74,25 @@ _SCHEDULING_ACTION_RE = re.compile(
 
 _SIDE_WORKFLOW_RE = re.compile(
     r"\b(?:"
-    r"profile|"
-    r"account|"
-    r"preferences|"
-    r"registration|"
-    r"register|"
-    r"enroll|"
-    r"enrollment|"
+    r"patient profile|"
+    r"demo patient|"
+    r"demo profile|"
+    r"create (?:an? )?(?:(?:demo|temporary) )?(?:patient )?(?:profile|account)|"
+    r"(?:profile|account) (?:setup|creation)|"
+    r"(?:patient )?(?:registration|enrollment)|"
+    r"(?:register|enroll) (?:you|the patient) "
+    r"(?:in|with|for) (?:an? |the |our )?"
+    r"(?:account|profile|system|portal|program)|"
+    r"(?:set|update|change) (?:your )?preferences|"
     r"demo setup|"
     r"temporary setup"
     r")\b"
+)
+
+
+_REGISTER_APPOINTMENT_RE = re.compile(
+    r"\b(?:register|enroll) (?:you|the patient) for "
+    r"(?:an? |the )?appointment\b"
 )
 
 _REQUIRED_RE = re.compile(
@@ -132,7 +141,7 @@ _TIME_RE = re.compile(
 
 _COMPACT_TIME_RE = re.compile(
     r"\b"
-    r"(?P<compact>[1-9]\d{2}|1[0-2]\d{2})"
+    r"(?P<compact>[1-9][0-5]\d|1[0-2][0-5]\d)"
     r"\s*"
     r"(?P<meridiem>a\.?m\.?|p\.?m\.?)"
     r"(?=\s|[?.!,;:]|$)"
@@ -315,6 +324,7 @@ _FACT_REQUEST_CUE_RE = re.compile(
     r"what are your|"
     r"can you (?:confirm|provide|state|repeat|tell me)|"
     r"could you (?:confirm|provide|state|repeat|tell me)|"
+    r"(?:can|could|may) i (?:get|have|take) your|"
     r"please (?:confirm|provide|state|repeat|tell me)|"
     r"confirm your|"
     r"verify your|"
@@ -660,7 +670,10 @@ def deterministic_turn_meaning(
     if not text:
         return None
 
-    end_requested = _END_RE.search(text) is not None
+    end_requested = (
+        _END_RE.search(text) is not None
+        and _OPEN_GOAL_RE.search(text) is None
+    )
     slot = _extract_concrete_slot(text)
 
     # --------------------------------------------------------------
@@ -768,12 +781,31 @@ def deterministic_turn_meaning(
     )
 
     if (
-        side_workflow
-        and not (
-            required
-            and scheduling_context
-        )
+        _REGISTER_APPOINTMENT_RE.search(text) is not None
+        and _PERMISSION_RE.search(text) is None
     ):
+        return TurnMeaning(
+            response_expectation=ResponseExpectation.NONE,
+            workflow_relation=WorkflowRelation.ADVANCES_OBJECTIVE,
+            question_kind=QuestionKind.NONE,
+            workflow_direction=WorkflowDirection.CONTINUE,
+            topic="scheduling",
+            requested_facts=(),
+            conversation_end_requested=end_requested,
+        )
+
+    if side_workflow and required and scheduling_context:
+        return TurnMeaning(
+            response_expectation=ResponseExpectation.NONE,
+            workflow_relation=WorkflowRelation.ADVANCES_OBJECTIVE,
+            question_kind=QuestionKind.NONE,
+            workflow_direction=WorkflowDirection.CONTINUE,
+            topic="scheduling",
+            requested_facts=(),
+            conversation_end_requested=end_requested,
+        )
+
+    if side_workflow:
         return TurnMeaning(
             response_expectation=ResponseExpectation.YES_NO,
             workflow_relation=WorkflowRelation.NONE,
@@ -849,10 +881,24 @@ def deterministic_turn_meaning(
             conversation_end_requested=end_requested,
         )
 
+    early_facts = (
+        _routine_intake_fast_facts(text)
+        or _requested_facts(text)
+    )
+
+    if early_facts:
+        return TurnMeaning(
+            response_expectation=ResponseExpectation.FACT,
+            workflow_relation=WorkflowRelation.NONE,
+            question_kind=QuestionKind.PATIENT_ATTRIBUTE,
+            workflow_direction=WorkflowDirection.NONE,
+            topic="patient information",
+            requested_facts=early_facts,
+            conversation_end_requested=end_requested,
+        )
+
     if (
         _PERMISSION_RE.search(text) is not None
-        and _routine_intake_fast_facts(text)
-        != ("provider_preference",)
     ):
         direction = (
             WorkflowDirection.STOP
@@ -879,7 +925,7 @@ def deterministic_turn_meaning(
     # --------------------------------------------------------------
     # 4. High-confidence supported patient-fact requests.
     # --------------------------------------------------------------
-    facts = _routine_intake_fast_facts(text)
+    facts = early_facts
 
     if not facts:
         if _DECLARATIVE_NAME_REQUEST_RE.search(text) is not None:

@@ -442,49 +442,75 @@ class RunArtifactRecorder:
         with self._lock:
             if self._finalized:
                 return
+            primary_error: BaseException | None = None
 
-            self.record_event(
-                "run_finalized",
-                status=status,
-                call_id=call_id,
-                error=error,
-            )
+            try:
+                self.record_event(
+                    "run_finalized",
+                    status=status,
+                    call_id=call_id,
+                    error=error,
+                )
 
-            transcript = tuple(self._transcript)
-            metrics = tuple(self._turn_metrics)
+                transcript = tuple(self._transcript)
+                metrics = tuple(self._turn_metrics)
 
-            _write_json_atomic(
-                self.run_dir / "transcript.json",
-                {
-                    "run_id": self.run_id,
-                    "turns": transcript,
-                },
-            )
+                _write_json_atomic(
+                    self.run_dir / "transcript.json",
+                    {
+                        "run_id": self.run_id,
+                        "turns": transcript,
+                    },
+                )
 
-            self._write_transcript_text(transcript)
+                self._write_transcript_text(transcript)
 
-            _write_json_atomic(
-                self.run_dir / "metrics.json",
-                {
-                    "run_id": self.run_id,
-                    "turns": metrics,
-                    "summary": self._build_metrics_summary(metrics),
-                },
-            )
+                _write_json_atomic(
+                    self.run_dir / "metrics.json",
+                    {
+                        "run_id": self.run_id,
+                        "turns": metrics,
+                        "summary": self._build_metrics_summary(metrics),
+                    },
+                )
 
-            self._materialize_call_audio()
+                self._materialize_call_audio()
+            except BaseException as caught:  # noqa: BLE001 - finalization must always clean up
+                primary_error = caught
+            finally:
+                for resource in (
+                    self._inbound_wave,
+                    self._outbound_wave,
+                    self._events_file,
+                ):
+                    try:
+                        resource.close()
+                    except BaseException as close_error:  # noqa: BLE001 - best-effort resource cleanup
+                        if primary_error is None:
+                            primary_error = close_error
 
-            self._inbound_wave.close()
-            self._outbound_wave.close()
-            self._events_file.close()
+                terminal_status = "failed" if primary_error is not None else status
+                terminal_error = error
 
-            self._write_manifest(
-                status=status,
-                call_id=call_id,
-                error=error,
-            )
+                if primary_error is not None and terminal_error is None:
+                    terminal_error = (
+                        f"{type(primary_error).__name__}: {primary_error}"
+                    )
 
-            self._finalized = True
+                try:
+                    self._write_manifest(
+                        status=terminal_status,
+                        call_id=call_id,
+                        error=terminal_error,
+                    )
+                except BaseException as manifest_error:  # noqa: BLE001 - preserve primary failure
+                    if primary_error is None:
+                        primary_error = manifest_error
+
+                self._finalized = True
+
+            if primary_error is not None:
+                raise primary_error
 
     def _build_metrics_summary(
         self,

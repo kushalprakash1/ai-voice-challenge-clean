@@ -231,6 +231,14 @@ class DeterministicNaturalVerbalizer:
                 "ANSWER/CORRECT decision requires approved patient facts."
             )
 
+        key_set = set(keys)
+
+        if key_set == {"provider_preference"}:
+            return (
+                "I don't have a preference. "
+                "Any available provider is fine."
+            )
+
         values = {
             key: cls._fact_value(
                 scenario=scenario,
@@ -238,8 +246,6 @@ class DeterministicNaturalVerbalizer:
             )
             for key in keys
         }
-
-        key_set = set(keys)
 
         adaptive_persona_keys = {
             "patient_status",
@@ -279,12 +285,6 @@ class DeterministicNaturalVerbalizer:
         if key_set == {"first_name", "last_name"}:
             return cls._sentence(
                 f"{values['first_name']} {values['last_name']}"
-            )
-
-        if key_set == {"provider_preference"}:
-            return (
-                "I don't have a preference. "
-                "Any available provider is fine."
             )
 
         if key_set == {"complaint", "duration"}:

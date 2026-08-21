@@ -8,10 +8,7 @@ from voiceprobe.conversation.goal_policy import WorkflowFocus
 from voiceprobe.conversation.session import PatientSession
 from voiceprobe.interpreters.ollama import OllamaConversationInterpreter
 from voiceprobe.scenarios.catalog import get_scenario
-from voiceprobe.verbalizers.deterministic import (
-    DeterministicNaturalVerbalizer,
-)
-
+from voiceprobe.verbalizers.deterministic import DeterministicNaturalVerbalizer
 
 OBJECTIVE_TEXT = (
     "I need to schedule an appointment for Friday afternoon."
@@ -182,6 +179,33 @@ def test_explicit_scheduling_intake_can_exit_side_workflow() -> None:
         assert result.patient_text == "April 12, 1998."
         assert session.goal_context.focus is WorkflowFocus.SCHEDULING
 
+    finally:
+        interpreter.close()
+        client.close()
+
+
+def test_register_for_appointment_keeps_scheduling_focus() -> None:
+    session, interpreter, client = build_session()
+
+    try:
+        result = session.handle_agent_turn(
+            "Let me register you for an appointment on Friday."
+        )
+        assert result.decision.kind is not CommunicationKind.DECLINE_WORKFLOW
+        assert session.goal_context.focus is WorkflowFocus.SCHEDULING
+    finally:
+        interpreter.close()
+        client.close()
+
+
+def test_real_side_workflow_is_not_hidden_by_scheduling_mention() -> None:
+    session, interpreter, client = build_session()
+
+    try:
+        result = session.handle_agent_turn(
+            "Would you like me to create an account before we schedule anything?"
+        )
+        assert result.decision.kind is CommunicationKind.DECLINE_WORKFLOW
     finally:
         interpreter.close()
         client.close()

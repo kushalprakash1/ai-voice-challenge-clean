@@ -14,13 +14,13 @@ from pathlib import Path
 from typing import Final
 from uuid import uuid4
 
-from voiceprobe.policy import CallPolicy
-from voiceprobe.policy import MAX_CALL_DURATION_SECONDS
+from voiceprobe.policy import MAX_CALL_DURATION_SECONDS, CallPolicy
 from voiceprobe.safety import validate_destination
 from voiceprobe.suite import AssessmentSuitePlan
 
 LIVE_CONFIRMATION_TOKEN: Final = "AUTHORIZE_ASSESSMENT_CALLS"
 EXECUTION_CONCURRENCY: Final = 1
+CALL_TEARDOWN_TOLERANCE_SECONDS: Final = 0.5
 
 _EXECUTION_ID_PATTERN = re.compile(r"^[a-z0-9][a-z0-9_-]{2,63}$")
 
@@ -277,7 +277,10 @@ class CallLedger:
         duration = float(duration_seconds)
 
         if not (
-            0.0 <= duration <= self._authorization.manifest.max_call_duration_seconds
+            0.0
+            <= duration
+            <= self._authorization.manifest.max_call_duration_seconds
+            + CALL_TEARDOWN_TOLERANCE_SECONDS
         ):
             raise CallLedgerError("Call duration exceeds the execution limit.")
 

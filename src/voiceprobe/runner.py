@@ -196,10 +196,11 @@ def run_authorized_suite(
         ) as error:
             # One attempt only. A failed scenario is recorded and execution
             # advances to the next planned scenario without retrying it.
-            ledger.fail_call(
-                position,
-                error=(f"{type(error).__name__}: {error}"),
-            )
+            if ledger.entries[position - 1].status is CallStatus.STARTED:
+                ledger.fail_call(
+                    position,
+                    error=(f"{type(error).__name__}: {error}"),
+                )
 
     return SuiteRunResult(
         execution_id=manifest.execution_id,

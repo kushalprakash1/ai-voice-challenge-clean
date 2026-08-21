@@ -140,6 +140,24 @@ def test_completed_transition_survives_reload(
     assert entry.provider_call_id == "provider-1"
 
 
+def test_completed_call_near_duration_boundary_survives_reload(
+    tmp_path: Path,
+) -> None:
+    auth = authorization()
+    path = tmp_path / "near-limit-ledger.json"
+    ledger = PersistentCallLedger.initialize(auth, path=path)
+    ledger.start_call(1, provider_call_id="provider-1")
+    ledger.complete_call(
+        1,
+        duration_seconds=180.25,
+        artifact_run_id="artifact-1",
+    )
+
+    loaded = PersistentCallLedger.load(auth, path=path)
+    assert loaded.entries[0].status is CallStatus.COMPLETED
+    assert loaded.entries[0].duration_seconds == 180.25
+
+
 def test_started_call_becomes_failed_after_crash_recovery(
     tmp_path: Path,
 ) -> None:

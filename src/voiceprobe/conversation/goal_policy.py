@@ -11,9 +11,9 @@ guard merely because the current sentence omits the words "demo profile".
 
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass
 from enum import StrEnum
-import re
 
 from voiceprobe.agents.brain import (
     CommunicationDecision,
@@ -46,15 +46,15 @@ class GoalContext:
 
 _SIDE_WORKFLOW_RE = re.compile(
     r"\b(?:"
-    r"profile|"
     r"patient profile|"
     r"demo patient|"
     r"demo profile|"
-    r"account|"
-    r"registration|"
-    r"register|"
-    r"enroll|"
-    r"enrollment|"
+    r"create (?:an? )?(?:patient )?(?:profile|account)|"
+    r"(?:profile|account) (?:setup|creation)|"
+    r"(?:patient )?(?:registration|enrollment)|"
+    r"(?:register|enroll) (?:you|the patient) "
+    r"(?:in|with|for) (?:an? |the |our )?"
+    r"(?:account|profile|system|portal|program)|"
     r"demo setup|"
     r"temporary setup"
     r")\b"
@@ -172,7 +172,6 @@ def apply_goal_policy(
     )
 
     # A profile/account/setup workflow must not hijack the scheduling goal.
-    # The narrow exception is an explicitly required scheduling prerequisite.
     if (
         explicit_side_workflow
         and not (

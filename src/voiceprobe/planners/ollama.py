@@ -97,8 +97,8 @@ class OllamaActionSelector:
                             "that conflict with the supplied facts. "
                             "Use clarify when the turn cannot be understood. "
                             "Use probe for suspicious or unusual behavior. "
-                            "Use complete only when the scheduling objective "
-                            "has clearly been accomplished."
+                            "Do not emit a completion action; the scheduling "
+                            "objective is tracked by the deterministic state."
                         ),
                     },
                     {

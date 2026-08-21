@@ -8,6 +8,7 @@ to choose new patient facts or modify conversation state.
 from __future__ import annotations
 
 import json
+import re
 
 import httpx
 from pydantic import (
@@ -22,6 +23,7 @@ from voiceprobe.agents.brain import (
 )
 from voiceprobe.conversation.state import PatientState, Speaker
 from voiceprobe.scenarios.models import PatientScenario
+from voiceprobe.verbalizers.deterministic import DeterministicNaturalVerbalizer
 
 DEFAULT_MODEL = "qwen3:14b"
 DEFAULT_URL = "http://127.0.0.1:11434/api/chat"
@@ -85,6 +87,11 @@ class OllamaNaturalVerbalizer:
         """Generate natural speech from one validated brain decision."""
         if state.scenario_id != scenario.scenario_id:
             raise ValueError("PatientState does not belong to the supplied scenario.")
+
+        if decision.state_objective:
+            return DeterministicNaturalVerbalizer._objective_text(
+                scenario=scenario,
+            )
 
         approved_facts = self._approved_facts(
             scenario=scenario,
@@ -341,6 +348,19 @@ class OllamaNaturalVerbalizer:
         """Reject scenario facts that were not approved for this response."""
         normalized_text = text.casefold()
 
+        def contains_value(value: object, haystack: str) -> bool:
+            normalized_value = " ".join(str(value).casefold().split())
+
+            if not normalized_value:
+                return False
+
+            # Match complete words/phrases rather than raw substrings.
+            # For example, "ann" matches "Her name is Ann." but not "annual".
+            pattern = re.compile(
+                rf"(?<!\w){re.escape(normalized_value).replace(r'\ ', r'\s+')}(?!\w)"
+            )
+            return pattern.search(haystack) is not None
+
         approved_keys: set[str] = set(decision.facts_to_communicate)
 
         if (
@@ -353,7 +373,7 @@ class OllamaNaturalVerbalizer:
                 if value is None:
                     continue
 
-                if str(value).casefold() in normalized_previous:
+                if contains_value(value, normalized_previous):
                     approved_keys.add(fact_key)
 
         allowed_values = {
@@ -372,12 +392,15 @@ class OllamaNaturalVerbalizer:
             if fact_key in approved_keys:
                 continue
 
-            normalized_value = str(value).casefold()
+            normalized_value = " ".join(str(value).casefold().split())
 
-            if normalized_value in allowed_values:
+            if normalized_value in allowed_values and contains_value(
+                value,
+                normalized_text,
+            ):
                 continue
 
-            if normalized_value in normalized_text:
+            if contains_value(value, normalized_text):
                 raise ValueError(
                     f"Verbalizer leaked an unapproved scenario fact: {fact_key}"
                 )

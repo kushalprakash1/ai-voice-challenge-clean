@@ -274,6 +274,19 @@ def test_completed_call_records_artifact() -> None:
     assert ledger.active_call_count == 0
 
 
+def test_completed_call_allows_small_teardown_tolerance() -> None:
+    ledger = CallLedger(authorized_execution())
+    ledger.start_call(1)
+
+    entry = ledger.complete_call(
+        1,
+        duration_seconds=180.25,
+        artifact_run_id="artifact-run-1",
+    )
+
+    assert entry.status is CallStatus.COMPLETED
+
+
 def test_failed_call_does_not_automatically_retry() -> None:
     ledger = CallLedger(authorized_execution())
 

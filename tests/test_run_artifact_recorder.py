@@ -218,3 +218,31 @@ def test_finalize_is_idempotent(
     manifest = json.loads((recorder.run_dir / "manifest.json").read_text())
 
     assert manifest["status"] == "completed"
+
+
+def test_finalize_failure_closes_resources_and_persists_terminal_manifest(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    recorder = RunArtifactRecorder(
+        root=tmp_path,
+        scenario=build_scenario(),
+        run_id="failed-finalize-run",
+    )
+
+    def fail_materialization() -> None:
+        raise RuntimeError("synthetic-finalization-failure")
+
+    monkeypatch.setattr(recorder, "_materialize_call_audio", fail_materialization)
+
+    with pytest.raises(RuntimeError, match="synthetic-finalization-failure"):
+        recorder.finalize()
+
+    assert recorder._inbound_wave._file is None
+    assert recorder._outbound_wave._file is None
+    assert recorder._events_file.closed
+
+    manifest = json.loads((recorder.run_dir / "manifest.json").read_text())
+    assert manifest["status"] == "failed"
+    assert "synthetic-finalization-failure" in manifest["error"]
+    recorder.finalize()

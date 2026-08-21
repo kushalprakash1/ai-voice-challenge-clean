@@ -7,11 +7,7 @@ data. It never writes patient responses or modifies authoritative state.
 from __future__ import annotations
 
 import json
-from concurrent.futures import (
-    CancelledError,
-    Future,
-    ThreadPoolExecutor,
-)
+from concurrent.futures import Future, ThreadPoolExecutor
 from threading import Lock
 from time import perf_counter
 
@@ -226,17 +222,11 @@ class OllamaConversationInterpreter:
 
                 try:
                     result = future.result()
-                except (
-                    CancelledError,
-                    httpx.HTTPError,
-                    RuntimeError,
-                    TypeError,
-                    ValueError,
-                ) as error:
+                except Exception as error:  # noqa: BLE001 - speculation must not fail authoritative flow
                     # Speculation is optional. Record the failure and let
                     # the normal authoritative path run below.
                     print(
-                        f"[PREFETCH ERROR] {type(error).__name__}: {error}",
+                        f"[PREFETCH ERROR] {type(error).__name__}",
                         flush=True,
                     )
                     self._clear_prefetch(future)
@@ -272,15 +262,9 @@ class OllamaConversationInterpreter:
                 # avoiding concurrent competing requests to the same model.
                 try:
                     future.result()
-                except (
-                    CancelledError,
-                    httpx.HTTPError,
-                    RuntimeError,
-                    TypeError,
-                    ValueError,
-                ) as error:
+                except Exception as error:  # noqa: BLE001 - speculation must not fail authoritative flow
                     print(
-                        f"[PREFETCH STALE ERROR] {type(error).__name__}: {error}",
+                        f"[PREFETCH STALE ERROR] {type(error).__name__}",
                         flush=True,
                     )
 

@@ -37,6 +37,81 @@ def build_scenario() -> PatientScenario:
     )
 
 
+def test_fact_boundary_avoids_short_substrings() -> None:
+    scenario = PatientScenario(
+        scenario_id="boundary",
+        objective="Schedule an appointment.",
+        facts=PatientFacts(
+            name="Ann",
+            complaint="headache",
+            duration="one day",
+            appointment_type="new",
+        ),
+    )
+
+    decision = CommunicationDecision(
+        kind=CommunicationKind.ANSWER,
+        facts_to_communicate=("appointment_type",),
+    )
+
+    # An unrelated word containing the name is not a leaked fact.
+    OllamaNaturalVerbalizer._validate_fact_boundaries(
+        scenario=scenario,
+        decision=decision,
+        text="The annual appointment is available.",
+        previous_patient_message=None,
+    )
+
+    with pytest.raises(ValueError, match="unapproved scenario fact: name"):
+        OllamaNaturalVerbalizer._validate_fact_boundaries(
+            scenario=scenario,
+            decision=CommunicationDecision(
+                kind=CommunicationKind.ANSWER,
+                facts_to_communicate=("appointment_type",),
+            ),
+            text="Ann.",
+            previous_patient_message=None,
+        )
+
+
+    # A short fact must still be caught when leaked as a complete word
+    # inside an otherwise normal sentence.
+    with pytest.raises(ValueError, match="unapproved scenario fact: name"):
+        OllamaNaturalVerbalizer._validate_fact_boundaries(
+            scenario=scenario,
+            decision=CommunicationDecision(
+                kind=CommunicationKind.ANSWER,
+                facts_to_communicate=("appointment_type",),
+            ),
+            text="Her name is Ann.",
+            previous_patient_message=None,
+        )
+
+
+def test_state_objective_uses_deterministic_goal_without_ollama() -> None:
+    scenario = build_scenario()
+    verbalizer = OllamaNaturalVerbalizer(
+        client=httpx.Client(
+            transport=httpx.MockTransport(
+                lambda request: (_ for _ in ()).throw(
+                    AssertionError("state objective should not call Ollama")
+                )
+            )
+        )
+    )
+
+    text = verbalizer.verbalize(
+        scenario=scenario,
+        state=build_initial_state(scenario),
+        decision=CommunicationDecision(
+            kind=CommunicationKind.ANSWER,
+            state_objective=True,
+        ),
+    )
+
+    assert text == "I need to schedule an appointment for Friday afternoon."
+
+
 def test_verbalizes_only_approved_facts() -> None:
     captured_body: dict[str, object] = {}
 

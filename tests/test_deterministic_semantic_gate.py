@@ -181,6 +181,58 @@ def test_plain_goodbye_is_extracted_without_fake_fact_requests() -> None:
     assert not meaning.booking_confirmed
 
 
+def test_compact_times_validate_minutes() -> None:
+    for text, expected in (
+        ("930 PM", "9:30 PM"),
+        ("1130 AM", "11:30 AM"),
+        ("1245 PM", "12:45 PM"),
+    ):
+        meaning = deterministic_turn_meaning(
+            scenario=build_scenario(),
+            agent_turn=f"Friday at {text} is available. Would that work?",
+        )
+        assert meaning is not None
+        assert meaning.appointment_offer is not None
+        assert meaning.appointment_offer.time == expected
+
+    assert deterministic_turn_meaning(
+        scenario=build_scenario(),
+        agent_turn="Friday at 999 PM is available. Would that work?",
+    ) is None
+
+
+def test_polite_name_and_birth_date_requests_are_facts() -> None:
+    scenario = build_scenario()
+
+    name = deterministic_turn_meaning(
+        scenario=scenario,
+        agent_turn="Can I get your name?",
+    )
+    birth_date = deterministic_turn_meaning(
+        scenario=scenario,
+        agent_turn="May I have your date of birth?",
+    )
+
+    assert name is not None
+    assert name.requested_facts == ("name",)
+    assert name.question_kind is QuestionKind.PATIENT_ATTRIBUTE
+    assert birth_date is not None
+    assert birth_date.requested_facts == ("date_of_birth",)
+
+
+def test_day_wish_with_followup_question_does_not_end_call() -> None:
+    meaning = deterministic_turn_meaning(
+        scenario=build_scenario(),
+        agent_turn=(
+            "Thank you for calling. Have a good day. "
+            "How may I help you today?"
+        ),
+    )
+
+    assert meaning is not None
+    assert not meaning.conversation_end_requested
+
+
 def test_booking_confirmation_and_goodbye_extracts_slot() -> None:
     meaning = deterministic_turn_meaning(
         scenario=build_scenario(),
@@ -426,3 +478,15 @@ def test_real_call_four_great_day_session_pushes_back() -> None:
     finally:
         interpreter.close()
         client.close()
+
+
+def test_register_for_appointment_is_scheduling() -> None:
+    meaning = deterministic_turn_meaning(
+        scenario=build_scenario(),
+        agent_turn="Let me register you for an appointment on Friday.",
+    )
+
+    assert meaning is not None
+    assert meaning.workflow_relation is WorkflowRelation.ADVANCES_OBJECTIVE
+    assert meaning.topic == "scheduling"
+    assert meaning.question_kind is QuestionKind.NONE
