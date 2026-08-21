@@ -1,0 +1,41 @@
+{
+  "corpus_id": "historical-regressions-20260817",
+  "source_run": "20260817T001236.495425Z-autonomous-phone-diagnostic",
+  "cases": [
+    {
+      "id": "reschedule-reason-question",
+      "remote_turn": "Can you share the reason you need to reschedule?",
+      "requires_response": true,
+      "forbidden_actions": ["wait", "hold"],
+      "note": "The live system previously swallowed the first reason question and forced PGAI to repeat."
+    },
+    {
+      "id": "alternative-tail-question",
+      "remote_turn": "or should I check for Friday mornings instead?",
+      "requires_response": true,
+      "forbidden_actions": ["wait", "hold"],
+      "note": "A complete alternative branch must not be treated as a fragment merely because it starts with 'or'."
+    },
+    {
+      "id": "full-alternative-question",
+      "remote_turn": "There are no Friday afternoon openings. Would you like to try a different day or time, or should I check Friday mornings for you?",
+      "requires_response": true,
+      "forbidden_actions": ["wait", "hold"],
+      "note": "The live v3.2 route incorrectly returned HOLD on this actionable question."
+    },
+    {
+      "id": "presence-check",
+      "remote_turn": "Are you still there?",
+      "requires_response": true,
+      "forbidden_actions": ["wait", "hold"],
+      "note": "Presence recovery should acknowledge and continue the current plan without resetting to a stale script."
+    },
+    {
+      "id": "profile-choice",
+      "remote_turn": "Would you like to create a demo patient profile? I just need your first and last name to get started.",
+      "requires_response": true,
+      "forbidden_actions": ["wait", "hold"],
+      "note": "The planner should choose a profile strategy from mission/truth rather than blindly agreeing to create one."
+    }
+  ]
+}
