@@ -1,4 +1,4 @@
-# Call 6 — Farthest-Date Scheduling
+# Call 2 — Farthest-Date Scheduling
 
 **Classification:** Gold behavioral case
 
@@ -6,8 +6,8 @@ Tests horizon following, an existing appointment, constraint relaxation, and slo
 
 ## Evidence
 
-- [▶ Play full call audio (OGG)](https://github.com/kushalprakash1/ai-voice-challenge-clean/raw/refs/heads/main/submission/calls/call-06-farthest-date-scheduling/call.ogg)
-- [Read full transcript](https://github.com/kushalprakash1/ai-voice-challenge-clean/blob/main/submission/calls/call-06-farthest-date-scheduling/transcript.txt)
+- [▶ Play full call audio (OGG)](https://github.com/kushalprakash1/ai-voice-challenge-clean/raw/refs/heads/main/submission/calls/call-02-farthest-date-scheduling/call.ogg)
+- [Read full transcript](https://github.com/kushalprakash1/ai-voice-challenge-clean/blob/main/submission/calls/call-02-farthest-date-scheduling/transcript.txt)
 
 The OGG is the mixed call recording and contains both sides of the conversation.
 The transcript labels the remote system as `AGENT` and VoiceProbe as `PATIENT`.

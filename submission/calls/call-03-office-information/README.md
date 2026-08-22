@@ -1,4 +1,4 @@
-# Call 4 — Office Information
+# Call 3 — Office Information
 
 **Classification:** Gold behavioral case
 
@@ -6,8 +6,8 @@ Tests self-pay state, location inventory, address consistency, switching, and of
 
 ## Evidence
 
-- [▶ Play full call audio (OGG)](https://github.com/kushalprakash1/ai-voice-challenge-clean/raw/refs/heads/main/submission/calls/call-04-office-information/call.ogg)
-- [Read full transcript](https://github.com/kushalprakash1/ai-voice-challenge-clean/blob/main/submission/calls/call-04-office-information/transcript.txt)
+- [▶ Play full call audio (OGG)](https://github.com/kushalprakash1/ai-voice-challenge-clean/raw/refs/heads/main/submission/calls/call-03-office-information/call.ogg)
+- [Read full transcript](https://github.com/kushalprakash1/ai-voice-challenge-clean/blob/main/submission/calls/call-03-office-information/transcript.txt)
 
 The OGG is the mixed call recording and contains both sides of the conversation.
 The transcript labels the remote system as `AGENT` and VoiceProbe as `PATIENT`.

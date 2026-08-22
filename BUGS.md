@@ -5,7 +5,7 @@ not include failures attributed to VoiceProbe.
 
 ## Transfer reached a test-line dead end
 
-**Observed in:** Call 2
+**Observed in:** Call 5
 
 **Expected:** Accepting an offered staff escalation should connect the caller
 to a useful support destination or clearly report that transfer is unavailable.
@@ -18,7 +18,7 @@ escalation path.
 
 ## Medication demo workflow cannot add refill data
 
-**Observed in:** Call 3
+**Observed in:** Call 4
 
 **Expected:** The demo workflow should provide a coherent way to add or collect
 the medication information required for its refill flow.
@@ -31,7 +31,7 @@ cannot supply the state needed to complete it.
 
 ## Location inventory and address changed during one call
 
-**Observed in:** Call 4
+**Observed in:** Call 3
 
 **Expected:** Offered office locations and their addresses should remain stable
 through selection and follow-up questions.
@@ -45,7 +45,7 @@ location-specific scheduling unreliable.
 
 ## Office-hours question was not recognized
 
-**Observed in:** Call 4
+**Observed in:** Call 3
 
 **Expected:** “What are the hours for that location?” should return the active
 office's hours or request a day if necessary.
@@ -58,7 +58,7 @@ variation.
 
 ## Registered name was corrupted when repeated
 
-**Observed in:** Call 5
+**Observed in:** Call 1
 
 **Expected:** A registered caller name should be repeated and spelled
 consistently with the value supplied during profile creation.
@@ -71,7 +71,7 @@ wrong identity.
 
 ## Doctor-specific hours collapsed to clinic hours
 
-**Observed in:** Call 5
+**Observed in:** Call 1
 
 **Expected:** A question about one doctor's location and working hours should
 return doctor-specific information or state that it is unavailable.
@@ -84,7 +84,7 @@ doctor is available then.
 
 ## Farthest-date objective was not followed initially
 
-**Observed in:** Call 6
+**Observed in:** Call 2
 
 **Expected:** A request for the furthest currently bookable date should search
 the scheduling horizon before proposing a slot.
@@ -98,7 +98,7 @@ produce materially different appointments.
 
 ## Accepted appointment ended without confirmation
 
-**Observed in:** Call 1
+**Observed in:** Call 6
 
 **Expected:** After the caller accepts a concrete slot, the agent should confirm
 whether the appointment was booked before ending the interaction.

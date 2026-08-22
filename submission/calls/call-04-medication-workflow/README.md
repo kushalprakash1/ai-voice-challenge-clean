@@ -1,4 +1,4 @@
-# Call 3 — Medication Workflow
+# Call 4 — Medication Workflow
 
 **Classification:** Gold behavioral case
 
@@ -6,8 +6,8 @@ Tests whether a demo refill workflow can add the medication data required to con
 
 ## Evidence
 
-- [▶ Play full call audio (OGG)](https://github.com/kushalprakash1/ai-voice-challenge-clean/raw/refs/heads/main/submission/calls/call-03-medication-workflow/call.ogg)
-- [Read full transcript](https://github.com/kushalprakash1/ai-voice-challenge-clean/blob/main/submission/calls/call-03-medication-workflow/transcript.txt)
+- [▶ Play full call audio (OGG)](https://github.com/kushalprakash1/ai-voice-challenge-clean/raw/refs/heads/main/submission/calls/call-04-medication-workflow/call.ogg)
+- [Read full transcript](https://github.com/kushalprakash1/ai-voice-challenge-clean/blob/main/submission/calls/call-04-medication-workflow/transcript.txt)
 
 The OGG is the mixed call recording and contains both sides of the conversation.
 The transcript labels the remote system as `AGENT` and VoiceProbe as `PATIENT`.
