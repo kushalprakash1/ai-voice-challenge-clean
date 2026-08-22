@@ -1,6 +1,6 @@
 # Architecture
 
-VoiceProbe is a focused calling and evaluation system. Its central design
+Autonomous Patient Agent is a focused calling and evaluation system. Its central design
 choice is to separate interpretation from ownership of patient and transaction
 state.
 
@@ -73,7 +73,7 @@ sentence boundaries. PGAI sometimes continued after a pause that looked final
 to ASR. Immediate response could therefore overlap the continuation or answer
 only the first clause. Production uses a continuation grace period, invalidates
 an authorized response when remote speech resumes, and re-coalesces the whole
-burst before deciding again. Speech received while VoiceProbe is rendering or
+burst before deciding again. Speech received while Autonomous Patient Agent is rendering or
 playing remains buffered until the response path is free.
 
 This adds latency to the first response, but makes fragmented remote turns

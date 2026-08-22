@@ -1,4 +1,4 @@
-# VoiceProbe v3.1 Calibrated Embedding Semantics
+# Autonomous Patient Agent v3.1 Calibrated Embedding Semantics
 
 The production semantic fallback remains subordinate to the deterministic v3
 fast policy.

@@ -10,7 +10,7 @@ Tests self-pay state, location inventory, address consistency, switching, and of
 - [Read full transcript](https://github.com/kushalprakash1/ai-voice-challenge-clean/blob/main/submission/calls/call-03-office-information/transcript.txt)
 
 The OGG is the mixed call recording and contains both sides of the conversation.
-The transcript labels the remote system as `AGENT` and VoiceProbe as `PATIENT`.
+The transcript labels the remote system as `AGENT` and Autonomous Patient Agent as `PATIENT`.
 
 ## Provenance
 

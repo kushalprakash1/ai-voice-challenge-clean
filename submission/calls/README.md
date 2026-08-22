@@ -1,4 +1,4 @@
-# VoiceProbe — Call Evidence
+# Autonomous Patient Agent — Call Evidence
 
 This directory contains the ten calls used for the submission and Loom
 walkthrough.

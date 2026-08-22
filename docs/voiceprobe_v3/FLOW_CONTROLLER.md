@@ -1,13 +1,13 @@
-# VoiceProbe v3 structured flow controller
+# Autonomous Patient Agent v3 structured flow controller
 
 This phase introduces explicit scheduling progress without forcing the remote
 agent through a rigid script.
 
 ## Two dimensions of state
 
-For each workflow stage, VoiceProbe distinguishes:
+For each workflow stage, Autonomous Patient Agent distinguishes:
 
-- **communicated**: VoiceProbe has actually supplied or selected that piece of
+- **communicated**: Autonomous Patient Agent has actually supplied or selected that piece of
   information;
 - **confirmed**: the remote scheduling agent has explicitly acknowledged or
   confirmed it.

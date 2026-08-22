@@ -1,4 +1,4 @@
-# VoiceProbe v3.1 semantic router
+# Autonomous Patient Agent v3.1 semantic router
 
 The old production fallback converted every unresolved deterministic turn into
 the same clarification. That removed silence but allowed normal paraphrases to

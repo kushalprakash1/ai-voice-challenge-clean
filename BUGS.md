@@ -1,7 +1,7 @@
 # Gold-call findings
 
 These findings describe remote-agent behavior observed in Calls 1–6. They do
-not include failures attributed to VoiceProbe.
+not include failures attributed to Autonomous Patient Agent.
 
 ## Transfer reached a test-line dead end
 

@@ -1,4 +1,4 @@
-# VoiceProbe v3 early-silence regression
+# Autonomous Patient Agent v3 early-silence regression
 
 ## Evidence
 
@@ -14,7 +14,7 @@ The new observability path showed the exact failure sequence:
 4. That wording was not recognized by the open-ended-intent vocabulary, so
    the policy returned `FALLBACK / novel_or_ambiguous_turn`.
 5. No fallback resolver was configured, therefore `response_ready=false` and
-   VoiceProbe stayed silent.
+   Autonomous Patient Agent stayed silent.
 6. `Are you still there?` also fell through to FALLBACK, after which the
    remote scheduler ended the call.
 

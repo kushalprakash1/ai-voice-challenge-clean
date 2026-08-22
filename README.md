@@ -1,6 +1,6 @@
-# VoiceProbe
+# Autonomous Patient Agent
 
-VoiceProbe places controlled phone calls and acts as a synthetic patient while
+Autonomous Patient Agent places controlled phone calls and acts as a synthetic patient while
 testing a remote voice agent. It keeps patient facts and transaction state in
 Python, using speech and language models only where semantic variation makes
 deterministic matching insufficient.
@@ -22,7 +22,7 @@ The call path and model/state ownership are described in
 
 ## Running locally
 
-VoiceProbe requires Python 3.12 or newer. The lockfile is managed with `uv`.
+Autonomous Patient Agent requires Python 3.12 or newer. The lockfile is managed with `uv`.
 
 ```bash
 uv sync --dev

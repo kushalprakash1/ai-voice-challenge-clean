@@ -1,4 +1,4 @@
-# VoiceProbe v3 live Asterisk integration
+# Autonomous Patient Agent v3 live Asterisk integration
 
 The v3 live path is opt-in.  The existing legacy/v2 Asterisk media executor is
 left unchanged and remains the default.

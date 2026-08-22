@@ -13,7 +13,7 @@ following-Friday branch now recognizes both numeric and spoken forms.
 The audio also showed a genuine short-gap continuation. Flux ended the morning
 offer and then began `preference, or would you like to look at later dates or
 times?` about 505 ms later. Treating those two EOTs independently creates a
-spurious fallback. VoiceProbe therefore introduces a 600 ms continuation grace
+spurious fallback. Autonomous Patient Agent therefore introduces a 600 ms continuation grace
 for Flux EOT stabilization. This is deliberately below the observed 681.8 ms
 gap between the separate reason-for-visit question and its later example, so
 that pair remains separate.

@@ -1,4 +1,4 @@
-# VoiceProbe v3 live observability
+# Autonomous Patient Agent v3 live observability
 
 ## Why this exists
 

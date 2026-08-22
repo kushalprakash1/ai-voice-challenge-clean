@@ -10,7 +10,7 @@ controller holds the finalized transcript for the configured continuation grace
 period.
 
 If no new remote speech begins during that interval, the turn is released into
-the existing burst/coalescing policy and VoiceProbe may respond.
+the existing burst/coalescing policy and Autonomous Patient Agent may respond.
 
 If `on_start_of_turn` or `on_turn_resumed` occurs before the grace period
 expires, the release timer is cancelled while the transcript is retained. The

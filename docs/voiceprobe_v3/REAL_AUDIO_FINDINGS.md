@@ -41,7 +41,7 @@ for a preference/choice. No provider names are encoded.
 
 The historical recordings end before an actual appointment slot is accepted
 and confirmed, so replay success alone cannot prove the final booking stage.
-Before Asterisk integration, VoiceProbe v3 now treats a concrete compatible PM
+Before Asterisk integration, Autonomous Patient Agent v3 now treats a concrete compatible PM
 slot offer as an explicit booking action: it responds with a booking instruction
 and stores the exact offered time in structured flow state. Explicit non-Friday
 offers are declined.

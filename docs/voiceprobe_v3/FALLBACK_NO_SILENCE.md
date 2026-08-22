@@ -1,4 +1,4 @@
-# VoiceProbe v3 production fallback: no-silence invariant
+# Autonomous Patient Agent v3 production fallback: no-silence invariant
 
 ## Problem
 
@@ -8,7 +8,7 @@ has `requires_response=True` but `response_ready=False`.
 
 That behavior is useful for offline layering tests, but it is unsafe as the
 default production telephony behavior: an unfamiliar but valid scheduler
-utterance can otherwise make VoiceProbe remain completely silent until the
+utterance can otherwise make Autonomous Patient Agent remain completely silent until the
 remote side hangs up.
 
 ## Production invariant

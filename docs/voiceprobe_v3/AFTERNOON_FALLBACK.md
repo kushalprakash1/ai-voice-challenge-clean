@@ -1,4 +1,4 @@
-# VoiceProbe v3 afternoon fallback regression
+# Autonomous Patient Agent v3 afternoon fallback regression
 
 ## Evidence
 
@@ -21,7 +21,7 @@ machine-generated transcript.
 
 ## Deterministic fallback contract
 
-VoiceProbe remains Friday-afternoon-first.
+Autonomous Patient Agent remains Friday-afternoon-first.
 
 Only after the remote scheduler explicitly offers the alternate-day afternoon
 fallback does v3 relax the *day* constraint while preserving the *afternoon*
@@ -33,7 +33,7 @@ constraint:
 3. Monday-Thursday PM slots may then be accepted.
 4. Morning slots remain incompatible.
 5. Weekend PM slots are not treated as "earlier in the week."
-6. A concrete compatible slot is recorded only after VoiceProbe accepts it.
+6. A concrete compatible slot is recorded only after Autonomous Patient Agent accepts it.
 7. Flow completion still requires explicit remote booked/scheduled/confirmed
    evidence.
 

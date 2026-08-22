@@ -10,7 +10,7 @@ Tests accented-name robustness, provider selection, and provider-specific contex
 - [Read full transcript](https://github.com/kushalprakash1/ai-voice-challenge-clean/blob/main/submission/calls/call-01-doctor-directory/transcript.txt)
 
 The OGG is the mixed call recording and contains both sides of the conversation.
-The transcript labels the remote system as `AGENT` and VoiceProbe as `PATIENT`.
+The transcript labels the remote system as `AGENT` and Autonomous Patient Agent as `PATIENT`.
 
 ## Provenance
 

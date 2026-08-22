@@ -1,4 +1,4 @@
-# VoiceProbe v3 Flux ingress
+# Autonomous Patient Agent v3 Flux ingress
 
 This phase connects the v3 dialogue policy to Pipecat's Deepgram Flux turn
 events without touching the production v2 caller.
@@ -13,9 +13,9 @@ events without touching the production v2 caller.
 
 Only `on_end_of_turn` is actionable.
 
-When VoiceProbe is idle, a Flux-confirmed end of turn is evaluated immediately.
+When Autonomous Patient Agent is idle, a Flux-confirmed end of turn is evaluated immediately.
 
-When VoiceProbe is preparing or playing a response, subsequent remote turns are
+When Autonomous Patient Agent is preparing or playing a response, subsequent remote turns are
 not put into a FIFO reasoning queue. They are accumulated into one
 `RemoteSpeechBurstBuffer`. Once the response completes, the whole burst is
 passed once through `ConversationBurstCoalescer`.
@@ -23,13 +23,13 @@ passed once through `ConversationBurstCoalescer`.
 Example:
 
 ```text
-VoiceProbe busy
+Autonomous Patient Agent busy
     remote: "Thanks, Alex."
     remote: "Let me check appointments."
     remote: "Thanks for confirming your DOB."
     remote: "What is the reason for your visit?"
 
-VoiceProbe ready
+Autonomous Patient Agent ready
     -> coalesce all four
     -> latest actionable request:
        "What is the reason for your visit?"

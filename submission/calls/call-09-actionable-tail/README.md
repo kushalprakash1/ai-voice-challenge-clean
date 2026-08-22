@@ -10,7 +10,7 @@ Examples and partial tails could displace the direct actionable request.
 - [Read full transcript](https://github.com/kushalprakash1/ai-voice-challenge-clean/blob/main/submission/calls/call-09-actionable-tail/transcript.txt)
 
 The OGG is the mixed call recording and contains both sides of the conversation.
-The transcript labels the remote system as `AGENT` and VoiceProbe as `PATIENT`.
+The transcript labels the remote system as `AGENT` and Autonomous Patient Agent as `PATIENT`.
 
 ## Provenance
 

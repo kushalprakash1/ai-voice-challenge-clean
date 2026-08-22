@@ -1,13 +1,13 @@
 # Iteration from real calls
 
-The frozen batch contains ten calls. The numbers below are evaluator presentation order rather than original execution labels. Calls 10–7 are development runs; Calls 1–6 are the final behavioral cases.
+The frozen batch contains ten calls. The numbers below are presentation order rather than original execution labels. Calls 10–7 are development runs; Calls 1–6 are the final behavioral cases.
 
 ## Development calls
 
 ### Call 10
 
 Early responses treated individual ASR endings as complete conversational
-turns. When the remote agent continued after a short pause, VoiceProbe could
+turns. When the remote agent continued after a short pause, Autonomous Patient Agent could
 answer the fragment or speak over the continuation. The first corrective step
 was to preserve completed fragments and replay the exact ingress sequence.
 
@@ -69,10 +69,10 @@ observes whether a useful destination actually receives the caller.
 ### Call 6 — booking completion
 
 The caller accepted a concrete appointment offered by the remote system. The
-case distinguishes spoken acceptance from a completed booking: VoiceProbe does
+case distinguishes spoken acceptance from a completed booking: Autonomous Patient Agent does
 not mark success until the remote side confirms the transaction.
 
 The development loop was consistent across these cases: listen to the call,
 identify which side owned the failure, add a focused replay or state assertion,
 then rerun the relevant path. Remote-agent findings are kept separate from
-VoiceProbe implementation defects in [BUGS.md](../BUGS.md).
+Autonomous Patient Agent implementation defects in [BUGS.md](../BUGS.md).

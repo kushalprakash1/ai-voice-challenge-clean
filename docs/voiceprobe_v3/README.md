@@ -1,6 +1,6 @@
-# VoiceProbe v3
+# Autonomous Patient Agent v3
 
-VoiceProbe v3 is a replay-driven rebuild of the live conversational path.
+Autonomous Patient Agent v3 is a replay-driven rebuild of the live conversational path.
 
 ## Why this branch exists
 
