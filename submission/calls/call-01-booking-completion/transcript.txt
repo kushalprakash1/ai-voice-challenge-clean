@@ -1,0 +1,13 @@
+[0018.306s] AGENT: be recorded for quality and training purposes. Thank you for calling Pivot Point Orthopedics. Would you like to create a demo patient profile? I just need your first and last name to get started.
+[0018.306s] PATIENT: Yes, please. My name is Chitragupta Subramnian Singh.
+[0043.611s] AGENT: Your patient profile has been created, and your date of birth is July fourth two thousand for demo purposes. How may I help you today?
+[0043.622s] PATIENT: Actually, my date of birth is April 12, 1998. I need to schedule an appointment for Friday afternoon.
+[0069.343s] AGENT: Can you tell me the reason for your visit?
+[0069.343s] AGENT: For example, is this for a routine checkup?
+[0069.343s] AGENT: a follow-up, a new patient consultation, or something else?
+[0069.343s] PATIENT: A new patient consultation.
+[0090.872s] AGENT: You already have a new patient consultation booked for Tuesday, August twenty fifth at two fifteen PM. Would you like to keep this appointment?
+[0090.872s] AGENT: reschedule it to Friday afternoon, or cancel it.
+[0090.872s] PATIENT: I'd like to reschedule it. I'm looking for Friday afternoon.
+[0123.059s] AGENT: Yeah. The new patient consultation scheduled for Tuesday, August twenty fifth at two fifteen PM with Dubey Hauser. I'll look for available times on Friday afternoon to reschedule this appointment. Before I do that, can you tell me the reason you need to reschedule?
+[0123.060s] PATIENT: I have right shoulder pain.

@@ -1,0 +1,21 @@
+[0015.459s] AGENT: call may be recorded for quality and training purposes. Thank you for calling Pivot Point Orthopedics. Would you like to create a demo patient profile?
+[0015.460s] PATIENT: Yes, please.
+[0023.984s] AGENT: Great. What is your first name?
+[0023.985s] PATIENT: My first name is Alex.
+[0033.865s] AGENT: Thanks, Alex.
+[0033.865s] AGENT: What is your last name?
+[0033.865s] PATIENT: My last name is Morgan.
+[0052.383s] AGENT: Your patient profile has been created, and your date of birth is July fourth two thousand for demo purposes. How may I help you today?
+[0052.384s] PATIENT: I'm calling to request a medication refill.
+[0072.152s] AGENT: I don't see any medications on your chart.
+[0072.152s] AGENT: that can be refilled right now. If you need help with something else, just let me know.
+[0072.152s] PATIENT: Can you add lisinopril to my demo profile so I can continue with the refill request?
+[0094.932s] AGENT: I can't add medications to your profile. If you need a refill, you'll need to speak with our clinic team directly. Would you like me to connect you to our patient support team?
+[0094.933s] PATIENT: Is there another way to add a medication to this demo profile?
+[0115.039s] AGENT: There isn't a way to add medications to your demo profile through this system. If you have other questions or need help with something else, I'm here to assist.
+[0115.039s] PATIENT: Yes, please connect me with someone who can help with the refill.
+[0127.924s] AGENT: Just ringing you now. Thank you.
+[0127.924s] PATIENT: I'm calling to request a medication refill.
+[0131.194s] AGENT: Just ringing you now. Thank you.
+[0131.194s] PATIENT: I'm calling to request a medication refill.
+[0140.073s] AGENT: Hello. You've -- line. Goodbye.

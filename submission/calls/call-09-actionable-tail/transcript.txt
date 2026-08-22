@@ -1,0 +1,14 @@
+[0008.200s] AGENT: This call may be recorded for quality and training purposes. Para Español, Opri Mael Dos.
+[0016.399s] AGENT: Thank you for profile. I just need your first and last name.
+[0028.150s] PATIENT: I need to schedule an appointment for Friday afternoon. Alex Morgan.
+[0038.367s] AGENT: Thanks. Alex Morgan. Let me create your demo patient profile so we can get started with scheduling your appointment.
+[0051.048s] AGENT: a new patient consultation, a follow-up, a routine office visit, or something else.
+[0061.911s] PATIENT: I need to schedule an appointment for Friday afternoon.
+[0074.171s] AGENT: Is this visit for a routine office visit a follow-up? a new patient consultation or something else? Let me know a bit more about why you'd like to be seen.
+[0085.107s] PATIENT: I need to schedule an appointment for Friday afternoon.
+[0100.010s] AGENT: Is this appointment for a general office visit? a follow-up. a new patient consultation, or something else. Just a bit more detail will help me book the right type of visit for you.
+[0107.071s] PATIENT: I need a new patient consultation.
+[0125.055s] AGENT: We have opening for new patient consultation on Friday, August 21st with Abracur. The available times are 9 a.m. 9.45 a.m. and 10.30 a.m.
+[0137.518s] AGENT: Would any...
+[0149.554s] PATIENT: I need to schedule an appointment for Friday afternoon.
+[0161.020s] AGENT: There are no Friday afternoon openings on August 21st.

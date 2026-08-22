@@ -1,0 +1,25 @@
+[0019.952s] AGENT: This call may be recorded for quality and training purposes. Thank you for calling Pivot Point Orthopedics. Would you like to create a demo patient profile? I just need your first and last name to get started.
+[0019.952s] PATIENT: Yes, please. my name is Alex Morgan.
+[0038.390s] AGENT: Your patient profile is set up, and your date of birth is July fourth two thousand for demo purposes.
+[0038.390s] AGENT: How may I help you today?
+[0038.390s] PATIENT: What insurance plans do you accept?
+[0057.378s] AGENT: In Pivot Point, orthopedics accepts most major insurance plans. If you have a specific insurance provider in mind, I can check if it's accepted. Would you like to update or add your insurance information?
+[0057.378s] PATIENT: I don't have insurance. I'll be self-pay.
+[0076.536s] AGENT: No problem. You can still receive care at Pivot Point Orthopedics without insurance. If you ever need to update your insurance status, just let me know. How else can I help you today?
+[0076.537s] PATIENT: What office locations do you have?
+[0097.409s] AGENT: Pivot Point Orthopedics has one main office. The address is two two zero Athens Way, suite two hundred, Nashville. Would you like directions or more details about the clinic?
+[0097.409s] PATIENT: I'd like the first location you mentioned.
+[0116.598s] AGENT: The main clinic address is one two three four Recovery Way, suite two hundred, Austin. If you need more details or want to schedule a visit, just let me know.
+[0116.598s] PATIENT: What are the hours for that location?
+[0137.096s] AGENT: There are no towers for that location. The clinic is in the Recovery Plaza Medical Building at one two three four Recovery Way, suite two hundred, Austin. Let me know if you need anything else.
+[0137.097s] PATIENT: Can I still be seen at that location if I'm self-pay?
+[0159.184s] AGENT: Yes. You can be seen at one two three four Recovery Way, suite two hundred, Austin, even if you are self pay. We welcome patients without insurance. Would you like to schedule an appointment?
+[0159.184s] AGENT: have any other questions,
+[0159.184s] PATIENT: Actually, I'd like to switch to the second location you mentioned.
+[0181.433s] AGENT: You can also be seen at our Nashville location, which is two two zero Athens Way, suite two hundred, Nashville. Would you like to schedule an appointment there or need more information about that office?
+[0181.434s] PATIENT: What time does that office close?
+[0199.675s] AGENT: The Nashville office follows the same hours as our main clinic. Open Monday through Friday with varying hours each day. Would you like the specific hours for a certain day?
+[0199.675s] PATIENT: What about Saturday?
+[0215.222s] AGENT: The clinic is closed on Saturdays. If you need an appointment, I can help you find a time Monday through Friday.
+[0215.222s] AGENT: Would you like to check availability?
+[0215.222s] PATIENT: And you still have me as self-pay, correct?

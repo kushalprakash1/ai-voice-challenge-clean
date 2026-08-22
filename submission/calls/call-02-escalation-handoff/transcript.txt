@@ -1,0 +1,11 @@
+[0016.343s] AGENT: may be recorded for quality and training purposes. Thank you for calling Pivot Point Orthopedics. Would you like to create a demo patient profile? I just need your first and last name to get started.
+[0016.343s] PATIENT: Yes, please. my name is Alex Morgan.
+[0035.871s] AGENT: Your patient profile has been created, and your date of birth is set as July fourth two thousand for demo purposes. How may I help you today?
+[0035.871s] PATIENT: I'm calling to request a medication refill.
+[0054.462s] AGENT: I don't see any medications on your chart that can be refilled right now.
+[0054.462s] PATIENT: Can we add the medication information to my demo profile so I can continue with the refill request?
+[0059.386s] AGENT: I don't see any medications on your chart that can be refilled right now.
+[0059.386s] AGENT: you'd like to speak with someone about this, just let me know.
+[0059.387s] PATIENT: Yes, please connect me with someone who can help with the refill.
+[0073.090s] AGENT: Transferring you now. Thank you.
+[0078.977s] AGENT: Hello. You've reached the pretty good AI test line. Goodbye.

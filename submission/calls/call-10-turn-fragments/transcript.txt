@@ -1,0 +1,19 @@
+[0013.911s] AGENT: This call may be recorded for quality and training purposes. Para Español, Oprimayitos. Thank you for calling Pivot Point Orthopedics. Would you like to create a demo patient profile?
+[0015.595s] PATIENT: Yes, please.
+[0017.633s] AGENT: I just need you.
+[0033.795s] AGENT: Please tell me your first and last name.
+[0036.717s] PATIENT: Alex Morgan.
+[0052.012s] AGENT: Your patient profile has been created. and your date of birth is July 4th, 2000. for demo purposes. How may I help you today?
+[0055.656s] PATIENT: I need to schedule an appointment for Friday afternoon.
+[0067.762s] AGENT: What type of appointment do you need? For example, is this for a new patient consultation, a follow-up, a routine visit, or something else?
+[0070.444s] PATIENT: I need a new patient consultation.
+[0079.792s] AGENT: Do you have a specific provider you'd like to see or are you open to any available provider?
+[0083.695s] PATIENT: I don't have a preference. Any available provider is fine.
+[0092.662s] AGENT: Let me check for available new patient consultation appointments for Friday afternoon. One moment.
+[0100.306s] PATIENT: Could you clarify that?
+[0115.897s] AGENT: Sure. On Friday, August 21st, there are three available times with Abreaker. 9 a.m., 9.45 a.m., and 10.30 a. Would you like to book one of these or would you prefer to look at other days?
+[0117.580s] PATIENT: Yes, please.
+[0128.298s] AGENT: Just to confirm, would you like to book the 9 a.m., 9.45 a.m., or 10.30 a.m. slot on Friday, August 21
+[0129.981s] PATIENT: Yes, please.
+[0139.182s] AGENT: Which time would you like to book? 9 a.m. 9.45 a.m. or 10.30 a.m
+[0140.866s] PATIENT: Yes, please.

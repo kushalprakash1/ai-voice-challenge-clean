@@ -1,0 +1,34 @@
+[0017.401s] AGENT: This call may be recorded for quality and training purposes. Thank you for calling Pivot Point Orthodontics. Would you like to create a demo patient profile? I just need your first and last name to get started.
+[0017.401s] PATIENT: Yes, please. My name is Alex Morgan.
+[0032.171s] AGENT: Your patient profile is set up, and your date of birth is July fourth two thousand for demo purposes.
+[0032.171s] PATIENT: Could you please repeat that question?
+[0037.326s] AGENT: may I help you?
+[0037.326s] PATIENT: Could you please repeat that question?
+[0045.052s] AGENT: How may I assist you today,
+[0055.330s] AGENT: How may I help you today?
+[0055.330s] PATIENT: I need to schedule an appointment for Friday afternoon.
+[0064.673s] AGENT: What is the reason for your appointment?
+[0064.673s] PATIENT: Could you please repeat that question?
+[0072.303s] AGENT: For -- What is the reason for your appointment?
+[0072.304s] PATIENT: Could you please repeat that question?
+[0079.788s] AGENT: For -- What is the reason for your appointment?
+[0079.789s] PATIENT: Could you please repeat that question?
+[0087.911s] AGENT: For ex -- What is the reason for your appointment?
+[0087.911s] PATIENT: Could you please repeat that question?
+[0095.700s] AGENT: example, is it... what is the reason for your appointment?
+[0095.700s] PATIENT: Could you please repeat that question?
+[0110.601s] AGENT: For -- What is the reason for your appointment? For example, is it for a routine visit, a follow-up, or a specific concern?
+[0110.602s] PATIENT: Could you please repeat that question?
+[0118.588s] AGENT: What is the reason for your appointment?
+[0118.588s] PATIENT: Could you please repeat that question?
+[0127.149s] AGENT: For... what is the reason for your appointment?
+[0127.150s] PATIENT: Could you please repeat that question?
+[0141.695s] AGENT: For example, what is the reason for your appointment? For example, is it for a routine visit, a follow-up, or a specific concern?
+[0141.695s] PATIENT: Could you please repeat that question?
+[0149.646s] AGENT: What is the reason for your appointment?
+[0149.647s] PATIENT: Could you please repeat that question?
+[0157.783s] AGENT: For -- What is the reason for your appointment?
+[0157.784s] PATIENT: Could you please repeat that question?
+[0166.028s] AGENT: For -- What is the reason for your appointment?
+[0166.029s] PATIENT: Could you please repeat that question?
+[0173.601s] AGENT: For --

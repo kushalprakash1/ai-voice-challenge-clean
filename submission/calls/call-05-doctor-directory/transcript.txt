@@ -1,0 +1,18 @@
+[0016.699s] AGENT: This call may be recorded for quality and training purposes. Thank you for calling Pivot Point Orthopedics. Would you like to create a demo patient profile? I just need your first and last name to get started.
+[0016.700s] PATIENT: Yes, please. my name is Gyeong-hyeon Gwak.
+[0037.018s] AGENT: Your patient profile is set up, and your date of birth is July fourth two thousand for demo purposes. How may I help you today,
+[0037.018s] PATIENT: Could you repeat the name you have on my profile and spell it for me?
+[0055.592s] AGENT: I have your name as Young Guac. That's j i a n g u. Is that correct?
+[0055.592s] PATIENT: What doctors or specialists are available?
+[0086.951s] AGENT: We have three orthopedic doctors and two physical therapists. Doctor Dugie Hauser, Doctor. Doug Ross, and Doctor. Adam Bricker, handle joint, muscle, and bone condition.
+[0086.951s] AGENT: For physical therapy, we have Lynn Anderson and Carl Mentz. Would you like more details about any of them or need help booking an appointment?
+[0086.951s] PATIENT: I'd like Doctor Dugie Hauser as my doctor.
+[0106.685s] AGENT: We have doctor Judy Houser available. Would you like to schedule an appointment with doctor Houser?
+[0106.685s] AGENT: If so, what brings you in?
+[0106.686s] PATIENT: Is that doctor a male or female doctor?
+[0122.037s] AGENT: Doctor Dudi Hauser is male. Would you like to book an appointment with him?
+[0122.037s] PATIENT: Which location does that doctor work at, and what hours does that doctor work there?
+[0158.657s] AGENT: Doctor Didi Houser sees patients at Pivot Point Orthopedics located at one two three four Recovery Way, suite two hundred, Austin. Clinic hours are nine AM to four PM, Monday, Tuesday, and Thursday, twelve PM to seven PM, Wednesday, and nine AM to twelve PM, Friday. Would you like to schedule a visit with doctor Houser?
+[0158.657s] PATIENT: Can I see more than one doctor if I need to, or do I have to choose just one?
+[0183.606s] AGENT: You can see more than one doctor if needed. You don't have to choose just one. If you'd like, I can help you schedule with any of our providers.
+[0183.606s] PATIENT: Actually, I'd like to switch to Doctor Doug Ross.

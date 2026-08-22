@@ -1,0 +1,24 @@
+[0019.828s] AGENT: call may be recorded for quality and training purposes. Thank you for calling to thePoint Orthopedics. Would you like to create a demo patient profile?
+[0019.828s] AGENT: I just need your first and last name to get started.
+[0019.830s] PATIENT: Chitragupta Subramnian Singh.
+[0043.722s] AGENT: Your patient profile is set up, and your date of birth is July fourth two thousand for demo purposes.
+[0043.722s] AGENT: How may I help you today?
+[0043.723s] PATIENT: I'd like to schedule a new patient consultation. What's the furthest date in the future that you can currently book?
+[0065.117s] AGENT: You mentioned you'd like to schedule a new patient consultation. Just to confirm, is this your first visit with us, and are you looking to establish care at the clinic?
+[0065.117s] PATIENT: Yes, this is my first visit and I'd like to establish care.
+[0087.642s] AGENT: You already have a new patient appointment booked for Tuesday, August twenty fifth at two fifteen PM. Would you like to keep this appointment
+[0087.642s] AGENT: reschedule it or cancel it.
+[0087.643s] PATIENT: I'd like to reschedule it. I'm looking for the furthest date in the future that you can currently book.
+[0111.128s] AGENT: You have a new patient appointment scheduled for Tuesday, August twenty fifth at two fifteen PM with Doovie Hauser. Is this the appointment you want to reschedule to a later date?
+[0111.128s] PATIENT: Yes, that's the appointment I'd like to reschedule. Please move it to the furthest date in the future that you can currently book.
+[0143.343s] AGENT: The furthest date I can currently book is Thursday, August twenty seventh.
+[0143.343s] AGENT: I have openings at ten thirty AM, eleven fifteen AM, and twelve PM.
+[0143.343s] AGENT: you like to move your appointment to one of these times, or would you like to try for a later date or a different time of day?
+[0143.343s] PATIENT: Yes, that's the appointment I'd like to reschedule. Please move it to the furthest date in the future that you can currently book.
+[0165.561s] AGENT: The latest available slot is Thursday, August twenty seventh at twelve PM. Would you like to move your appointment to that time?
+[0165.561s] PATIENT: That day doesn't work for me. I need a Friday afternoon appointment.
+[0188.996s] AGENT: There are no Friday afternoon openings between August twenty first and September twenty first. Would you like to try a different day or time, or would you like to be transferred to live support for more help?
+[0188.997s] PATIENT: Yes, please check a different day or time. I don't have a day or time preference. I want the latest date you can currently book.
+[0213.908s] AGENT: The latest date I can currently book is Tuesday, September twenty second.
+[0213.908s] AGENT: I have openings at ten thirty AM, eleven fifteen AM, and twelve PM. Would you like to move your appointment to one of these times?
+[0213.908s] PATIENT: Yes, please book the ten thirty AM slot.

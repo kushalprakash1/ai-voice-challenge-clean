@@ -1,0 +1,18 @@
+[0019.883s] AGENT: This call may be recorded for quality and training purposes. Thank you for calling Pivot Point Orthopedics. Would you like to create a demo patient profile? I just need your first and last name to get started.
+[0019.884s] PATIENT: Yes, please. My name is Alex Morgan.
+[0036.421s] AGENT: Your patient profile is set up, and your date of birth is July fourth two thousand for demo purposes. How may I help you today?
+[0036.422s] PATIENT: Actually, my date of birth is April 12, 1998. I need to schedule an appointment for Friday afternoon.
+[0059.570s] AGENT: What type of appointment do you need?
+[0059.570s] AGENT: for example, is this for a new patient consultation, a follow-up, a routine visit, or something else?
+[0059.570s] PATIENT: A new patient consultation.
+[0082.963s] AGENT: You already have a new patient consultation booked for Tuesday, August twenty fifth at two fifteen PM. Would you like to keep this appointment, reschedule it to Friday afternoon, or cancel it?
+[0082.963s] PATIENT: I'd like to reschedule it. I'm looking for Friday afternoon.
+[0111.227s] AGENT: You have a new patient consultation scheduled for Tuesday, August twenty fifth at two fifteen PM with Doobie Hauser. I can help you move this to a Friday afternoon.
+[0111.227s] AGENT: Can you tell me the reason you need to reschedule?
+[0111.228s] PATIENT: Could you rephrase that scheduling question?
+[0129.665s] AGENT: Of course. Can you share why you need to change your appointment from Tuesday, August twenty fifth to a different day?
+[0129.665s] PATIENT: I have right shoulder pain.
+[0148.756s] AGENT: There are no Friday afternoon openings between August twenty first and September twenty first. Would you like to try a different day or time, or should I check for other options?
+[0148.757s] PATIENT: Please check another weekday afternoon.
+[0171.944s] AGENT: I found openings on Thursday, August twentieth, in the afternoon at the Nashville location. The times available are twelve PM, twelve forty five PM, and one thirty PM. Would any of these work for you?
+[0171.944s] PATIENT: Yes, please book the five PM slot.
