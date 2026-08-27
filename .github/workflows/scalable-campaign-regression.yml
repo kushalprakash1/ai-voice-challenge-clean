@@ -8,12 +8,14 @@ on:
     paths:
       - "src/voiceprobe/campaign.py"
       - "src/voiceprobe/campaign_packs.py"
+      - "src/voiceprobe/campaign_report.py"
       - "src/voiceprobe/campaign_subprocess.py"
       - "src/voiceprobe/run_campaign.py"
       - "src/voiceprobe/run_campaign_case.py"
       - "src/voiceprobe/telephony/audiosocket_dispatcher.py"
       - "tests/test_campaign.py"
       - "tests/test_campaign_packs.py"
+      - "tests/test_campaign_report.py"
       - "tests/test_campaign_subprocess.py"
       - "tests/test_audiosocket_dispatcher.py"
       - "tests/test_safety.py"
@@ -57,12 +59,14 @@ jobs:
           uv run ruff check
           src/voiceprobe/campaign.py
           src/voiceprobe/campaign_packs.py
+          src/voiceprobe/campaign_report.py
           src/voiceprobe/campaign_subprocess.py
           src/voiceprobe/run_campaign.py
           src/voiceprobe/run_campaign_case.py
           src/voiceprobe/telephony/audiosocket_dispatcher.py
           tests/test_campaign.py
           tests/test_campaign_packs.py
+          tests/test_campaign_report.py
           tests/test_campaign_subprocess.py
           tests/test_audiosocket_dispatcher.py
 
@@ -71,6 +75,7 @@ jobs:
           uv run bandit -q
           src/voiceprobe/campaign.py
           src/voiceprobe/campaign_packs.py
+          src/voiceprobe/campaign_report.py
           src/voiceprobe/campaign_subprocess.py
           src/voiceprobe/run_campaign.py
           src/voiceprobe/run_campaign_case.py
@@ -81,6 +86,7 @@ jobs:
           uv run pytest -q
           tests/test_campaign.py
           tests/test_campaign_packs.py
+          tests/test_campaign_report.py
           tests/test_campaign_subprocess.py
           tests/test_audiosocket_dispatcher.py
           tests/test_safety.py
