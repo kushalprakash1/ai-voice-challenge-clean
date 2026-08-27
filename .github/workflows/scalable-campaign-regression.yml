@@ -16,8 +16,15 @@ on:
       - "tests/test_campaign_packs.py"
       - "tests/test_campaign_subprocess.py"
       - "tests/test_audiosocket_dispatcher.py"
+      - "tests/test_safety.py"
       - "tests/test_execution.py"
+      - "tests/test_execution_state.py"
       - "tests/test_runner.py"
+      - "tests/test_ami.py"
+      - "tests/test_ami_originate.py"
+      - "tests/test_asterisk_adapter.py"
+      - "tests/test_run_one_budget.py"
+      - "tests/test_run_one_live_policy.py"
       - ".github/workflows/scalable-campaign-regression.yml"
 
 permissions:
@@ -69,12 +76,19 @@ jobs:
           src/voiceprobe/run_campaign_case.py
           src/voiceprobe/telephony/audiosocket_dispatcher.py
 
-      - name: Run campaign and original execution regressions
+      - name: Run campaign and original safety regressions
         run: >-
           uv run pytest -q
           tests/test_campaign.py
           tests/test_campaign_packs.py
           tests/test_campaign_subprocess.py
           tests/test_audiosocket_dispatcher.py
+          tests/test_safety.py
           tests/test_execution.py
+          tests/test_execution_state.py
           tests/test_runner.py
+          tests/test_ami.py
+          tests/test_ami_originate.py
+          tests/test_asterisk_adapter.py
+          tests/test_run_one_budget.py
+          tests/test_run_one_live_policy.py
