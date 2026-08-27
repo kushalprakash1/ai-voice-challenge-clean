@@ -29,6 +29,14 @@ def test_gold_six_is_exact_preserved_submission_benchmark() -> None:
 
     assert len(pack.cases) == len(pack.gold_cases) == 6
     assert tuple(case.call_number for case in pack.gold_cases) == tuple(range(1, 7))
+    assert tuple(case.case_key for case in pack.gold_cases) == (
+        "gold-01-doctor-directory",
+        "gold-02-farthest-date-scheduling",
+        "gold-03-office-information",
+        "gold-04-medication-workflow",
+        "gold-05-escalation-handoff",
+        "gold-06-booking-completion",
+    )
     assert tuple(case.scenario_id for case in pack.gold_cases) == (
         "doctor-specialist-directory",
         "farthest-date-scheduling",
@@ -41,6 +49,25 @@ def test_gold_six_is_exact_preserved_submission_benchmark() -> None:
     assert all(
         case.transcript_path.endswith("transcript.txt") for case in pack.gold_cases
     )
+
+
+def test_gold_six_has_unique_case_ids_and_preserves_shared_runtime() -> None:
+    pack = get_evaluation_pack("gold-six")
+    plan = build_campaign_plan(
+        CallPolicy(originating_number=ORIGINATING_NUMBER, dry_run=True),
+        cases=pack.cases,
+        max_parallel_calls=6,
+        campaign_id="gold-six-identity-test",
+    )
+
+    assert len({case.case_id for case in plan.cases}) == 6
+    fourth, fifth = plan.cases[3:5]
+    assert fourth.case_id != fifth.case_id
+    assert fourth.scenario_id == fifth.scenario_id == "medication-refill-correction"
+    assert resolve_runtime_owner(fourth.scenario_id) == resolve_runtime_owner(
+        fifth.scenario_id
+    )
+    assert fourth.evaluation_focus != fifth.evaluation_focus
     assert all(
         case.expected_runtime_owner == resolve_runtime_owner(case.scenario_id)
         for case in pack.gold_cases

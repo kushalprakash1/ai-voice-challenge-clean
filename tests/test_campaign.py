@@ -95,12 +95,68 @@ def test_campaign_expands_repetitions_without_mutating_scenario_truth() -> None:
     assert plan.max_parallel_calls == 2
     assert plan.media_mode == "v3"
     assert tuple(case.repetition for case in plan.cases) == (1, 2, 3)
+    assert tuple(case.case_id for case in plan.cases) == (
+        "autonomous-phone-diagnostic-r01",
+        "autonomous-phone-diagnostic-r02",
+        "autonomous-phone-diagnostic-r03",
+    )
     assert all(case.objective == scenario.objective for case in plan.cases)
     assert all(case.test_targets == scenario.test_targets for case in plan.cases)
     assert all(
         case.evaluation_focus == "probe booking confirmation consistency"
         for case in plan.cases
     )
+
+
+def test_campaign_case_key_separates_identity_from_scenario() -> None:
+    plan = build_campaign_plan(
+        policy(),
+        cases=(
+            CampaignCaseSpec(
+                "medication-refill-correction", case_key="gold-04-medication-workflow"
+            ),
+            CampaignCaseSpec(
+                "medication-refill-correction", case_key="gold-05-escalation-handoff"
+            ),
+        ),
+        campaign_id="case-key-test",
+    )
+
+    assert tuple(case.case_id for case in plan.cases) == (
+        "gold-04-medication-workflow-r01",
+        "gold-05-escalation-handoff-r01",
+    )
+    assert {case.scenario_id for case in plan.cases} == {"medication-refill-correction"}
+
+
+def test_campaign_case_key_repetitions_are_deterministic() -> None:
+    plan = build_campaign_plan(
+        policy(),
+        cases=(
+            CampaignCaseSpec(
+                "medication-refill-correction",
+                repetitions=2,
+                case_key="gold-04-medication-workflow",
+            ),
+        ),
+        campaign_id="case-key-repetitions",
+    )
+
+    assert tuple(case.case_id for case in plan.cases) == (
+        "gold-04-medication-workflow-r01",
+        "gold-04-medication-workflow-r02",
+    )
+
+
+@pytest.mark.parametrize(
+    "case_key", ("../escape", "Uppercase", "a", "has.dot", "x" * 65)
+)
+def test_campaign_rejects_unsafe_case_keys(case_key: str) -> None:
+    with pytest.raises(CampaignSafetyError, match="case_key"):
+        build_campaign_plan(
+            policy(),
+            cases=(CampaignCaseSpec("autonomous-phone-diagnostic", case_key=case_key),),
+        )
 
 
 def test_campaign_parallelism_is_hard_capped() -> None:

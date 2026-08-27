@@ -65,6 +65,7 @@ class CampaignCaseSpec:
     scenario_id: str
     repetitions: int = 1
     evaluation_focus: str = ""
+    case_key: str | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -225,6 +226,19 @@ def _validate_campaign_id(value: str) -> str:
     return value
 
 
+def _validate_case_key(value: str | None) -> str | None:
+    if value is None:
+        return None
+
+    if not isinstance(value, str) or not _CAMPAIGN_ID_PATTERN.fullmatch(value):
+        raise CampaignSafetyError(
+            "case_key must contain only lowercase letters, numbers, underscores, "
+            "and hyphens, and be 3-64 characters long."
+        )
+
+    return value
+
+
 def build_campaign_plan(
     policy: CallPolicy,
     *,
@@ -264,13 +278,14 @@ def build_campaign_plan(
 
         scenario = get_scenario(spec.scenario_id)
         focus = _normalize_focus(spec.evaluation_focus)
+        case_key = _validate_case_key(spec.case_key)
 
         for repetition in range(1, spec.repetitions + 1):
             position = len(expanded) + 1
             expanded.append(
                 CampaignCase(
                     position=position,
-                    case_id=f"{scenario.scenario_id}-r{repetition:02d}",
+                    case_id=f"{case_key or scenario.scenario_id}-r{repetition:02d}",
                     scenario_id=scenario.scenario_id,
                     repetition=repetition,
                     objective=scenario.objective,

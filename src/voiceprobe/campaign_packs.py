@@ -21,6 +21,7 @@ class GoldCaseProvenance:
     """Preserved submission evidence attached to an existing scenario."""
 
     call_number: int
+    case_key: str
     scenario_id: str
     run_id: str | None
     evaluation_focus: str
@@ -38,13 +39,19 @@ class EvaluationPack:
     gold_cases: tuple[GoldCaseProvenance, ...] = ()
 
 
-def _case(scenario_id: str, focus: str) -> CampaignCaseSpec:
+def _case(
+    scenario_id: str,
+    focus: str,
+    *,
+    case_key: str | None = None,
+) -> CampaignCaseSpec:
     # Resolve at import time so a stale pack cannot silently reference a
     # removed/renamed scenario.
     get_scenario(scenario_id)
     return CampaignCaseSpec(
         scenario_id=scenario_id,
         evaluation_focus=focus,
+        case_key=case_key,
     )
 
 
@@ -174,6 +181,7 @@ PRODUCTION_SMOKE: Final = EvaluationPack(
 _GOLD_CASES: Final = (
     GoldCaseProvenance(
         1,
+        "gold-01-doctor-directory",
         "doctor-specialist-directory",
         None,
         "Doctor directory, identity spelling, and provider context.",
@@ -182,6 +190,7 @@ _GOLD_CASES: Final = (
     ),
     GoldCaseProvenance(
         2,
+        "gold-02-farthest-date-scheduling",
         "farthest-date-scheduling",
         "20260820T192304.183872Z-farthest-date-scheduling",
         "Farthest-date selection, constraint relaxation, and slot acceptance.",
@@ -190,6 +199,7 @@ _GOLD_CASES: Final = (
     ),
     GoldCaseProvenance(
         3,
+        "gold-03-office-information",
         "office-hours-location-insurance",
         "20260820T003326.444994Z-office-hours-location-insurance",
         "Self-pay, location switching, and office-hours context.",
@@ -198,6 +208,7 @@ _GOLD_CASES: Final = (
     ),
     GoldCaseProvenance(
         4,
+        "gold-04-medication-workflow",
         "medication-refill-correction",
         "20260819T224034.555463Z-medication-refill-correction",
         "Medication workflow and correction retention.",
@@ -206,6 +217,7 @@ _GOLD_CASES: Final = (
     ),
     GoldCaseProvenance(
         5,
+        "gold-05-escalation-handoff",
         "medication-refill-correction",
         "20260819T221459.541064Z-medication-refill-correction",
         "Escalation handoff after the refill workflow.",
@@ -214,6 +226,7 @@ _GOLD_CASES: Final = (
     ),
     GoldCaseProvenance(
         6,
+        "gold-06-booking-completion",
         "booking-confirmation-robustness",
         "20260820T083002.157315Z-booking-confirmation-robustness",
         "Concrete acceptance versus confirmed booking completion.",
@@ -225,7 +238,14 @@ _GOLD_CASES: Final = (
 GOLD_SIX: Final = EvaluationPack(
     pack_id="gold-six",
     description="The six preserved final submission gold calls, in presentation order.",
-    cases=tuple(_case(case.scenario_id, case.evaluation_focus) for case in _GOLD_CASES),
+    cases=tuple(
+        _case(
+            case.scenario_id,
+            case.evaluation_focus,
+            case_key=case.case_key,
+        )
+        for case in _GOLD_CASES
+    ),
     gold_cases=_GOLD_CASES,
 )
 
