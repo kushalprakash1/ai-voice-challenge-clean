@@ -9,12 +9,15 @@ from decimal import Decimal
 from pathlib import Path
 
 from voiceprobe.campaign import (
-    CAMPAIGN_CONFIRMATION_TOKEN,
     MAX_CAMPAIGN_PARALLELISM,
     CampaignCaseSpec,
     authorize_live_campaign,
     build_campaign_plan,
     run_campaign,
+)
+from voiceprobe.campaign_packs import (
+    evaluation_pack_ids,
+    get_evaluation_pack,
 )
 from voiceprobe.campaign_subprocess import SubprocessCampaignCaseExecutor
 from voiceprobe.config import Settings
@@ -43,6 +46,18 @@ def _create_campaign_root(path: Path) -> None:
     path.mkdir(exist_ok=False)
 
 
+def _merge_focus(primary: str, additional: str) -> str:
+    additional = " ".join(additional.split())
+
+    if not additional:
+        return primary
+
+    if not primary:
+        return additional
+
+    return f"{primary} Additional focus: {additional}"
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(
         description=(
@@ -62,10 +77,18 @@ def main() -> int:
         help="Include every scenario in the deterministic catalog.",
     )
     parser.add_argument(
+        "--pack",
+        choices=(*evaluation_pack_ids(), "full-regression"),
+        help=(
+            "Curated bug-finding matrix such as booking-integrity, "
+            "state-retention, or production-smoke."
+        ),
+    )
+    parser.add_argument(
         "--repetitions",
         type=int,
         default=1,
-        help="Repeat each selected scenario this many times.",
+        help="Repeat each selected scenario or pack case this many times.",
     )
     parser.add_argument(
         "--parallel",
@@ -80,7 +103,7 @@ def main() -> int:
         "--evaluation-focus",
         default="",
         help=(
-            "Evaluator-only bug focus recorded in the campaign manifest. "
+            "Optional evaluator-only bug focus recorded in the campaign manifest. "
             "It cannot overwrite patient scenario truth."
         ),
     )
@@ -108,20 +131,53 @@ def main() -> int:
     )
     args = parser.parse_args()
 
-    if args.all_scenarios and args.scenario:
+    selection_modes = sum(
+        (
+            bool(args.scenario),
+            bool(args.all_scenarios),
+            bool(args.pack),
+        )
+    )
+
+    if selection_modes != 1:
         parser.error(
-            "Use either --all-scenarios or one/more --scenario flags, not both."
+            "Choose exactly one selection mode: --scenario, --all-scenarios, or --pack."
         )
 
-    if args.all_scenarios:
-        scenario_ids = tuple(
-            scenario.scenario_id for scenario in list_scenarios()
+    selected_pack_id: str | None = None
+    selected_pack_description: str | None = None
+
+    if args.pack:
+        pack = get_evaluation_pack(args.pack)
+        selected_pack_id = pack.pack_id
+        selected_pack_description = pack.description
+        cases = tuple(
+            replace(
+                case,
+                repetitions=args.repetitions,
+                evaluation_focus=_merge_focus(
+                    case.evaluation_focus,
+                    args.evaluation_focus,
+                ),
+            )
+            for case in pack.cases
         )
     else:
-        scenario_ids = tuple(args.scenario or ())
+        if args.all_scenarios:
+            scenario_ids = tuple(
+                scenario.scenario_id for scenario in list_scenarios()
+            )
+        else:
+            scenario_ids = tuple(args.scenario or ())
 
-    if not scenario_ids:
-        parser.error("Select at least one --scenario or use --all-scenarios.")
+        cases = tuple(
+            CampaignCaseSpec(
+                scenario_id=scenario_id,
+                repetitions=args.repetitions,
+                evaluation_focus=args.evaluation_focus,
+            )
+            for scenario_id in scenario_ids
+        )
 
     if not 1 <= args.max_call_duration_seconds <= MAX_CALL_DURATION_SECONDS:
         parser.error(
@@ -137,14 +193,6 @@ def main() -> int:
         max_call_duration_seconds=args.max_call_duration_seconds,
     )
 
-    cases = tuple(
-        CampaignCaseSpec(
-            scenario_id=scenario_id,
-            repetitions=args.repetitions,
-            evaluation_focus=args.evaluation_focus,
-        )
-        for scenario_id in scenario_ids
-    )
     plan = build_campaign_plan(
         policy,
         cases=cases,
@@ -188,6 +236,8 @@ def main() -> int:
         manifest_path,
         {
             **asdict(plan),
+            "evaluation_pack_id": selected_pack_id,
+            "evaluation_pack_description": selected_pack_description,
             "per_call_worst_case_usd": per_call_worst_case,
             "campaign_worst_case_usd": campaign_worst_case,
             "telephony_enabled": args.live,
@@ -200,6 +250,7 @@ def main() -> int:
                 {
                     "campaign_id": plan.campaign_id,
                     "manifest_path": str(manifest_path),
+                    "evaluation_pack_id": selected_pack_id,
                     "call_count": plan.call_count,
                     "parallel": plan.max_parallel_calls,
                     "destination": plan.destination,
@@ -249,6 +300,7 @@ def main() -> int:
         result_path,
         {
             "campaign_id": result.campaign_id,
+            "evaluation_pack_id": selected_pack_id,
             "completed_count": result.completed_count,
             "failed_count": result.failed_count,
             "entries": [asdict(entry) for entry in result.entries],
@@ -262,6 +314,7 @@ def main() -> int:
                 "manifest_path": str(manifest_path),
                 "authorization_path": str(authorization_path),
                 "result_path": str(result_path),
+                "evaluation_pack_id": selected_pack_id,
                 "call_count": plan.call_count,
                 "parallel": plan.max_parallel_calls,
                 "completed_count": result.completed_count,
