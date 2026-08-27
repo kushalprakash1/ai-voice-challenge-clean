@@ -29,6 +29,10 @@ on:
       - "tests/test_run_one_live_policy.py"
       - ".github/workflows/scalable-campaign-regression.yml"
 
+concurrency:
+  group: scalable-campaign-regression-${{ github.ref }}
+  cancel-in-progress: true
+
 permissions:
   contents: read
 
