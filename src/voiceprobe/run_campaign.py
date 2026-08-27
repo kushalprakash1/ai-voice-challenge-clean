@@ -9,8 +9,10 @@ from decimal import Decimal
 from pathlib import Path
 
 from voiceprobe.campaign import (
+    CAMPAIGN_CONFIRMATION_TOKEN,
     MAX_CAMPAIGN_PARALLELISM,
     CampaignCaseSpec,
+    authorize_live_campaign,
     build_campaign_plan,
     run_campaign,
 )
@@ -23,15 +25,22 @@ from voiceprobe.safety import require_live_destination
 from voiceprobe.scenarios.catalog import list_scenarios
 from voiceprobe.telephony.audiosocket_dispatcher import AudioSocketDispatcher
 
-CAMPAIGN_CONFIRMATION_TOKEN = "AUTHORIZE_ASSESSMENT_CAMPAIGN"
 DEFAULT_CAMPAIGN_BUDGET_USD = Decimal("20.00")
 
 
 def _write_json_atomic(path: Path, payload: dict[str, object]) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
     temporary = path.with_name(f".{path.name}.tmp")
-    temporary.write_text(json.dumps(payload, indent=2, sort_keys=True, default=str) + "\n")
+    temporary.write_text(
+        json.dumps(payload, indent=2, sort_keys=True, default=str) + "\n"
+    )
     temporary.replace(path)
+
+
+def _create_campaign_root(path: Path) -> None:
+    """Create a new evidence root and refuse accidental campaign overwrite."""
+
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.mkdir(exist_ok=False)
 
 
 def main() -> int:
@@ -100,10 +109,14 @@ def main() -> int:
     args = parser.parse_args()
 
     if args.all_scenarios and args.scenario:
-        parser.error("Use either --all-scenarios or one/more --scenario flags, not both.")
+        parser.error(
+            "Use either --all-scenarios or one/more --scenario flags, not both."
+        )
 
     if args.all_scenarios:
-        scenario_ids = tuple(scenario.scenario_id for scenario in list_scenarios())
+        scenario_ids = tuple(
+            scenario.scenario_id for scenario in list_scenarios()
+        )
     else:
         scenario_ids = tuple(args.scenario or ())
 
@@ -112,7 +125,8 @@ def main() -> int:
 
     if not 1 <= args.max_call_duration_seconds <= MAX_CALL_DURATION_SECONDS:
         parser.error(
-            f"--max-call-duration-seconds must be between 1 and {MAX_CALL_DURATION_SECONDS}"
+            "--max-call-duration-seconds must be between 1 and "
+            f"{MAX_CALL_DURATION_SECONDS}"
         )
 
     settings = Settings()  # type: ignore[call-arg]
@@ -161,6 +175,14 @@ def main() -> int:
         )
 
     campaign_root = Path("artifacts/campaigns") / plan.campaign_id
+
+    try:
+        _create_campaign_root(campaign_root)
+    except FileExistsError:
+        parser.error(
+            "Campaign evidence directory already exists; choose a new --campaign-id."
+        )
+
     manifest_path = campaign_root / "manifest.json"
     _write_json_atomic(
         manifest_path,
@@ -190,22 +212,37 @@ def main() -> int:
         )
         return 0
 
-    if args.confirm != CAMPAIGN_CONFIRMATION_TOKEN:
-        parser.error(
-            "Live campaign requires --confirm AUTHORIZE_ASSESSMENT_CAMPAIGN."
-        )
-
     require_live_destination()
+
+    try:
+        authorization = authorize_live_campaign(
+            plan,
+            live_requested=args.live,
+            confirmation_token=args.confirm,
+        )
+    except ValueError as error:
+        parser.error(str(error))
+
+    authorization_path = campaign_root / "authorization.json"
+    _write_json_atomic(
+        authorization_path,
+        {
+            "campaign_id": plan.campaign_id,
+            "authorized": True,
+            "authorization_boundary": "campaign",
+            "confirmation_token_persisted": False,
+        },
+    )
 
     with AudioSocketDispatcher() as dispatcher:
         executor = SubprocessCampaignCaseExecutor(
+            authorization=authorization,
             dispatcher=dispatcher,
-            live=True,
             per_call_budget_usd=format(per_call_worst_case, "f"),
             max_rate_per_minute_usd=format(max_rate, "f"),
             log_root=Path("artifacts/campaigns"),
         )
-        result = run_campaign(plan, executor)
+        result = run_campaign(authorization.plan, executor)
 
     result_path = campaign_root / "result.json"
     _write_json_atomic(
@@ -223,6 +260,7 @@ def main() -> int:
             {
                 "campaign_id": result.campaign_id,
                 "manifest_path": str(manifest_path),
+                "authorization_path": str(authorization_path),
                 "result_path": str(result_path),
                 "call_count": plan.call_count,
                 "parallel": plan.max_parallel_calls,
