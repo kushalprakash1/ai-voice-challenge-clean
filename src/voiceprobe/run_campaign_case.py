@@ -6,7 +6,7 @@ explicit live authorization -> persistent budget/call ledgers -> production
 Asterisk adapter -> existing v2/v3 media runtime.
 
 The campaign supplies only an execution ID, call UUID, scenario ID, and an
-isolated loopback AudioSocket worker port.  Destination authorization and all
+isolated loopback AudioSocket worker port. Destination authorization and all
 other call safety checks are repeated inside this process.
 """
 
@@ -22,7 +22,6 @@ from uuid import UUID
 
 from voiceprobe.config import Settings
 from voiceprobe.execution import (
-    LIVE_CONFIRMATION_TOKEN,
     authorize_live_execution,
     prepare_execution,
     write_execution_manifest,
@@ -98,12 +97,16 @@ def main() -> int:
 
     if not 1 <= args.max_call_duration_seconds <= MAX_CALL_DURATION_SECONDS:
         parser.error(
-            f"--max-call-duration-seconds must be between 1 and {MAX_CALL_DURATION_SECONDS}"
+            "--max-call-duration-seconds must be between 1 and "
+            f"{MAX_CALL_DURATION_SECONDS}"
         )
 
-    # Campaign workers are processes, so scenario/environment state cannot leak
-    # between concurrent calls.
+    # Campaign workers are processes, so scenario/runtime environment cannot
+    # leak between concurrent calls. Explicitly clear run_one-only monitoring
+    # behavior because multiple local ffplay monitors are not part of the
+    # campaign's call-critical path.
     os.environ["VOICEPROBE_SCENARIO"] = args.scenario
+    os.environ["VOICEPROBE_LIVE_MONITOR"] = "0"
 
     settings = Settings()  # type: ignore[call-arg]
     base_policy = settings.call_policy()
@@ -203,6 +206,7 @@ def main() -> int:
         "entry": asdict(entry),
     }
     print(_result_line(payload))
+
     return 1 if result.failed_count else 0
 
 
