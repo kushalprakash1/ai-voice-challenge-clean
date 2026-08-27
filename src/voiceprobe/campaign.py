@@ -33,6 +33,7 @@ MAX_REPETITIONS_PER_CASE = 16
 MAX_EVALUATION_FOCUS_CHARS = 500
 # This is a public confirmation phrase, not a password, credential, or secret.
 CAMPAIGN_CONFIRMATION_TOKEN = "AUTHORIZE_ASSESSMENT_CAMPAIGN"  # nosec B105
+CAMPAIGN_MEDIA_MODE_V3 = "v3"
 _CAMPAIGN_ID_PATTERN = re.compile(r"^[a-z0-9][a-z0-9_-]{2,63}$")
 
 
@@ -90,6 +91,7 @@ class CampaignPlan:
     max_parallel_calls: int
     max_call_duration_seconds: int
     dry_run: bool
+    media_mode: str = CAMPAIGN_MEDIA_MODE_V3
 
     @property
     def call_count(self) -> int:
@@ -116,6 +118,7 @@ class CampaignCaseRequest:
     destination: str
     max_duration_seconds: int
     evaluation_focus: str
+    selected_media_mode: str = CAMPAIGN_MEDIA_MODE_V3
 
 
 @dataclass(frozen=True, slots=True)
@@ -151,6 +154,7 @@ class CampaignCaseResult:
     evidence_validation_error: str | None = None
     worker_connection_established: bool | None = None
     uuid_forwarded: bool | None = None
+    selected_media_mode: str | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -293,6 +297,7 @@ def build_campaign_plan(
         max_parallel_calls=parallelism,
         max_call_duration_seconds=policy.max_call_duration_seconds,
         dry_run=policy.dry_run,
+        media_mode=CAMPAIGN_MEDIA_MODE_V3,
     )
 
 
@@ -311,6 +316,11 @@ def authorize_live_campaign(
     if plan.dry_run:
         raise CampaignSafetyError(
             "Live campaign execution is forbidden while dry_run is enabled."
+        )
+
+    if plan.media_mode != CAMPAIGN_MEDIA_MODE_V3:
+        raise CampaignSafetyError(
+            "Live scalable campaigns require media_mode='v3'."
         )
 
     if not live_requested:
@@ -350,6 +360,7 @@ def _request_for(
         destination=destination,
         max_duration_seconds=plan.max_call_duration_seconds,
         evaluation_focus=case.evaluation_focus,
+        selected_media_mode=plan.media_mode,
     )
 
 

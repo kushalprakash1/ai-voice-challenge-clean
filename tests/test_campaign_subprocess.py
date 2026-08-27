@@ -27,6 +27,8 @@ from voiceprobe.campaign_evidence import (
 )
 from voiceprobe.campaign_subprocess import SubprocessCampaignCaseExecutor
 from voiceprobe.policy import CallPolicy
+from voiceprobe.telephony.ami import AsteriskAMIConfig
+from voiceprobe.telephony.asterisk_adapter import AsteriskAssessmentCallAdapter
 from voiceprobe.telephony.audiosocket_dispatcher import AudioSocketDispatcher
 
 ORIGINATING_NUMBER = "+12025550101"
@@ -90,9 +92,67 @@ def request_for(auth, position: int = 1) -> CampaignCaseRequest:
     )
 
 
-def test_subprocess_worker_command_preserves_original_live_boundary(tmp_path) -> None:
+@pytest.mark.parametrize("ambient", (None, "0"))
+def test_campaign_worker_environment_explicitly_selects_v3(
+    monkeypatch, ambient
+) -> None:
+    if ambient is None:
+        monkeypatch.delenv("VOICEPROBE_V3_LIVE", raising=False)
+    else:
+        monkeypatch.setenv("VOICEPROBE_V3_LIVE", ambient)
+
+    environment = SubprocessCampaignCaseExecutor._worker_environment()
+
+    assert environment["VOICEPROBE_V3_LIVE"] == "1"
+
+
+def test_incident_regression_absent_ambient_mode_cannot_select_legacy(
+    monkeypatch,
+) -> None:
+    monkeypatch.delenv("VOICEPROBE_V3_LIVE", raising=False)
+    worker_environment = SubprocessCampaignCaseExecutor._worker_environment()
+    monkeypatch.setenv(
+        "VOICEPROBE_V3_LIVE", worker_environment["VOICEPROBE_V3_LIVE"]
+    )
+
+    adapter = AsteriskAssessmentCallAdapter(
+        ami_config=AsteriskAMIConfig(username="test", secret="synthetic"),
+        expected_originating_number=ORIGINATING_NUMBER,
+    )
+
+    assert adapter._media_executor == adapter._execute_v3_media_call
+    assert adapter._media_executor != adapter._execute_media_call
+
+
+def test_live_worker_contract_fails_closed_before_runtime_setup(monkeypatch) -> None:
+    monkeypatch.setenv("DEEPGRAM_API_KEY", "synthetic-test-key")
+    monkeypatch.setenv("VOICEPROBE_V3_LIVE", "0")
+
+    with pytest.raises(RuntimeError, match="not active"):
+        run_campaign_case._validate_live_media_contract(selected_media_mode="v3")
+
+    monkeypatch.setenv("VOICEPROBE_V3_LIVE", "1")
+    with pytest.raises(RuntimeError, match="media mode v3"):
+        run_campaign_case._validate_live_media_contract(selected_media_mode="legacy")
+
+
+def test_live_worker_contract_requires_deepgram_before_runtime_setup(
+    monkeypatch,
+) -> None:
+    monkeypatch.setenv("VOICEPROBE_V3_LIVE", "1")
+    monkeypatch.delenv("DEEPGRAM_API_KEY", raising=False)
+
+    with pytest.raises(RuntimeError, match="DEEPGRAM_API_KEY"):
+        run_campaign_case._validate_live_media_contract(selected_media_mode="v3")
+
+
+def test_subprocess_worker_command_preserves_original_live_boundary(
+    tmp_path, monkeypatch
+) -> None:
     auth = authorization()
     observed: dict[str, object] = {}
+    secret = "synthetic-deepgram-secret-that-must-not-be-artifacted"
+    monkeypatch.setenv("DEEPGRAM_API_KEY", secret)
 
     def fake_run(command, **kwargs):
         observed["command"] = command
@@ -107,6 +167,7 @@ def test_subprocess_worker_command_preserves_original_live_boundary(tmp_path) ->
                 "duration_seconds": 12.5,
                 "call_id": call_id,
                 "worker_port": worker_port,
+                "selected_media_mode": "v3",
             }
         )
         payload += "\n"
@@ -122,6 +183,7 @@ def test_subprocess_worker_command_preserves_original_live_boundary(tmp_path) ->
                     "execution_id": "campaign-subprocess-test-c001",
                     "call_uuid": call_id,
                     "worker_port": worker_port,
+                    "selected_media_mode": "v3",
                 }
             )
         )
@@ -148,10 +210,13 @@ def test_subprocess_worker_command_preserves_original_live_boundary(tmp_path) ->
     assert "voiceprobe.run_campaign_case" in command
     assert "--live" in command
     assert "--confirm" in command
+    assert command[command.index("--media-mode") + 1] == "v3"
     assert "AUTHORIZE_ASSESSMENT_CALLS" in command
     assert "--lifecycle-path" not in command
     assert "shell" not in kwargs
     assert kwargs["text"] is True
+    assert kwargs["env"]["VOICEPROBE_V3_LIVE"] == "1"
+    assert secret not in " ".join(command)
     assert result.status is CampaignCaseStatus.COMPLETED
     assert result.artifact_run_id == "artifact-1"
     assert result.call_duration_seconds == 12.5
@@ -162,6 +227,9 @@ def test_subprocess_worker_command_preserves_original_live_boundary(tmp_path) ->
     assert result.route_released is True
     assert result.subprocess_exit_code == 0
     assert result.timed_out is False
+    assert secret not in "".join(
+        path.read_text() for path in tmp_path.rglob("*.log")
+    )
 
 
 def test_subprocess_worker_rejects_request_not_in_authorized_campaign(tmp_path) -> None:
@@ -280,6 +348,7 @@ def test_subprocess_worker_collects_lightweight_process_evidence(tmp_path) -> No
                         )
                     ),
                     "worker_port": 9200,
+                    "selected_media_mode": "v3",
                     "cpu_user_seconds": 1.25,
                     "cpu_system_seconds": 0.5,
                     "max_rss": 204800,
@@ -291,7 +360,7 @@ def test_subprocess_worker_collects_lightweight_process_evidence(tmp_path) -> No
             '"execution_id":"campaign-subprocess-test-c001",'
             '"artifact_run_id":"artifact-1","call_id":"'
             + json.loads(lifecycle_path.read_text())["call_uuid"]
-            + '","worker_port":9200}\n'
+            + '","worker_port":9200,"selected_media_mode":"v3"}\n'
         )
         return FakeProcess(stdout=payload)
 
@@ -378,6 +447,7 @@ def test_overlapping_subprocess_lifetimes_produce_peak_two(tmp_path) -> None:
                 "duration_seconds": 1.0,
                 "call_id": call_id,
                 "worker_port": port,
+                "selected_media_mode": "v3",
             }
         )
         return OverlappingProcess(stdout=payload)
@@ -415,6 +485,7 @@ def test_sequential_subprocess_lifetimes_produce_peak_one(tmp_path) -> None:
                 "duration_seconds": 1.0,
                 "call_id": call_id,
                 "worker_port": port,
+                "selected_media_mode": "v3",
             }
         )
         return FakeProcess(stdout=payload)
@@ -445,6 +516,8 @@ def test_sequential_subprocess_lifetimes_produce_peak_one(tmp_path) -> None:
         ("duration_seconds", float("inf")),
         ("duration_seconds", "not-a-number"),
         ("artifact_run_id", "../escape"),
+        ("selected_media_mode", None),
+        ("selected_media_mode", "legacy"),
     ),
 )
 def test_malformed_child_result_is_contained(tmp_path, field, value) -> None:
@@ -459,6 +532,7 @@ def test_malformed_child_result_is_contained(tmp_path, field, value) -> None:
             "duration_seconds": 1.0,
             "call_id": command[command.index("--call-id") + 1],
             "worker_port": int(command[command.index("--worker-port") + 1]),
+            "selected_media_mode": "v3",
         }
         payload[field] = value
         return FakeProcess(
@@ -515,6 +589,7 @@ def test_invalid_lifecycle_metrics_and_pid_are_contained(
             "execution_id": execution_id,
             "call_uuid": call_id,
             "worker_port": port,
+            "selected_media_mode": "v3",
         }
         lifecycle.update(lifecycle_change)
         path.write_text(json.dumps(lifecycle))
@@ -526,6 +601,7 @@ def test_invalid_lifecycle_metrics_and_pid_are_contained(
                 "duration_seconds": 1.0,
                 "call_id": call_id,
                 "worker_port": port,
+                "selected_media_mode": "v3",
             }
         )
         return process
@@ -565,6 +641,7 @@ def test_malformed_lifecycle_json_is_explicit_validation_failure(tmp_path) -> No
             "duration_seconds": 1.0,
             "call_id": command[command.index("--call-id") + 1],
             "worker_port": int(command[command.index("--worker-port") + 1]),
+            "selected_media_mode": "v3",
         }
         return FakeProcess(
             stdout="VOICEPROBE_CAMPAIGN_CASE_RESULT=" + json.dumps(payload)
@@ -646,6 +723,8 @@ def test_setup_failure_best_effort_finalizes_lifecycle(
             "00000000-0000-0000-0000-000000000001",
             "--worker-port",
             "9200",
+            "--media-mode",
+            "v3",
         ],
     )
     attempts = 0

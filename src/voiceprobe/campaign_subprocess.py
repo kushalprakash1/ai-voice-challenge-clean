@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import json
 import math
+import os
 import re
 
 # Subprocess provides process isolation; execution uses list-form argv, never a shell.
@@ -21,6 +22,7 @@ from pathlib import Path
 from uuid import NAMESPACE_URL, UUID, uuid5
 
 from voiceprobe.campaign import (
+    CAMPAIGN_MEDIA_MODE_V3,
     AuthorizedCampaign,
     CampaignCaseRequest,
     CampaignCaseResult,
@@ -129,6 +131,8 @@ class SubprocessCampaignCaseExecutor:
             str(call_id),
             "--worker-port",
             str(worker_port),
+            "--media-mode",
+            request.selected_media_mode,
             "--max-call-duration-seconds",
             str(request.max_duration_seconds),
             "--budget-usd",
@@ -147,11 +151,13 @@ class SubprocessCampaignCaseExecutor:
         timed_out = False
         launch_error: OSError | None = None
         try:
+            child_environment = self._worker_environment()
             process = self._process_factory(
                 command,
                 stdout=subprocess.PIPE,
                 stderr=subprocess.PIPE,
                 text=True,
+                env=child_environment,
             )
             if (
                 isinstance(process.pid, bool)
@@ -196,6 +202,7 @@ class SubprocessCampaignCaseExecutor:
             max_duration_seconds=request.max_duration_seconds,
         )
         parent_evidence = {
+            "selected_media_mode": request.selected_media_mode,
             "worker_pid": known_pid,
             "worker_port": worker_port,
             "call_uuid": str(call_id),
@@ -333,12 +340,28 @@ class SubprocessCampaignCaseExecutor:
                 "Campaign request evaluation focus does not match authorization."
             )
 
+        if request.selected_media_mode != plan.media_mode:
+            raise CampaignExecutionError(
+                "Campaign request media mode does not match authorization."
+            )
+
+        if request.selected_media_mode != CAMPAIGN_MEDIA_MODE_V3:
+            raise CampaignExecutionError(
+                "Live scalable campaign workers require media mode v3."
+            )
+
     @staticmethod
     def _execution_id(request: CampaignCaseRequest) -> str:
         # Execution IDs are intentionally short and independent of long
         # scenario names so they stay inside execution.py's 64-character cap.
         campaign_slug = request.campaign_id[:48].rstrip("-_")
         return f"{campaign_slug}-c{request.position:03d}"
+
+    @staticmethod
+    def _worker_environment() -> dict[str, str]:
+        environment = os.environ.copy()
+        environment["VOICEPROBE_V3_LIVE"] = "1"
+        return environment
 
     def _write_logs(
         self,
@@ -403,11 +426,17 @@ class SubprocessCampaignCaseExecutor:
             self._expect_equal(payload, "execution_id", execution_id, errors)
             self._expect_equal(payload, "call_id", str(call_id), errors)
             self._expect_equal(payload, "worker_port", worker_port, errors)
+            self._expect_equal(
+                payload, "selected_media_mode", CAMPAIGN_MEDIA_MODE_V3, errors
+            )
 
         if lifecycle:
             self._expect_equal(lifecycle, "execution_id", execution_id, errors)
             self._expect_equal(lifecycle, "call_uuid", str(call_id), errors)
             self._expect_equal(lifecycle, "worker_port", worker_port, errors)
+            self._expect_equal(
+                lifecycle, "selected_media_mode", CAMPAIGN_MEDIA_MODE_V3, errors
+            )
             lifecycle_pid = lifecycle.get("worker_pid")
             if (
                 isinstance(lifecycle_pid, bool)

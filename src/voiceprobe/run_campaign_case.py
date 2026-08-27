@@ -21,6 +21,7 @@ from decimal import Decimal
 from pathlib import Path
 from uuid import UUID
 
+from voiceprobe.campaign import CAMPAIGN_MEDIA_MODE_V3
 from voiceprobe.campaign_evidence import (
     CampaignEvidenceError,
     initialize_lifecycle,
@@ -51,7 +52,10 @@ from voiceprobe.runner import run_persistent_authorized_suite
 from voiceprobe.safety import require_live_destination
 from voiceprobe.scenarios.catalog import get_scenario, list_scenarios
 from voiceprobe.suite import build_suite_plan
-from voiceprobe.telephony.asterisk_adapter import AsteriskAssessmentCallAdapter
+from voiceprobe.telephony.asterisk_adapter import (
+    AsteriskAssessmentCallAdapter,
+    v3_live_enabled_from_environment,
+)
 from voiceprobe.telephony.audiosocket_dispatcher import validate_worker_port
 
 CASE_RESULT_PREFIX = "VOICEPROBE_CAMPAIGN_CASE_RESULT="
@@ -87,6 +91,21 @@ def _finalize_lifecycle(path: Path, payload: dict[str, object]) -> str | None:
     return None
 
 
+def _validate_live_media_contract(*, selected_media_mode: str) -> None:
+    """Fail before settings, AMI construction, or any telephony side effect."""
+
+    if selected_media_mode != CAMPAIGN_MEDIA_MODE_V3:
+        raise RuntimeError("Live scalable campaign requires media mode v3.")
+    if not v3_live_enabled_from_environment():
+        raise RuntimeError(
+            "Live scalable campaign selected v3 but VOICEPROBE_V3_LIVE is not active."
+        )
+    if not os.environ.get("DEEPGRAM_API_KEY", "").strip():
+        raise RuntimeError(
+            "Live scalable campaign requires DEEPGRAM_API_KEY before dialing."
+        )
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(
         description="Execute exactly one isolated VoiceProbe campaign case.",
@@ -102,6 +121,7 @@ def main() -> int:
     parser.add_argument("--execution-id", required=True)
     parser.add_argument("--call-id", required=True)
     parser.add_argument("--worker-port", required=True, type=int)
+    parser.add_argument("--media-mode", required=True)
     parser.add_argument("--live", action="store_true")
     parser.add_argument("--confirm", default="")
     parser.add_argument(
@@ -154,6 +174,7 @@ def main() -> int:
         "execution_id": args.execution_id,
         "artifact_run_id": None,
         "terminal": False,
+        "selected_media_mode": args.media_mode,
     }
     try:
         initialize_lifecycle(worker_lifecycle_path, lifecycle)
@@ -168,6 +189,9 @@ def main() -> int:
     os.environ["VOICEPROBE_LIVE_MONITOR"] = "0"
 
     try:
+        if args.live:
+            _validate_live_media_contract(selected_media_mode=args.media_mode)
+
         settings = Settings()  # type: ignore[call-arg]
         base_policy = settings.call_policy()
         policy = replace(
@@ -202,6 +226,7 @@ def main() -> int:
                         "dry_run": True,
                         "status": "completed",
                         "artifact_run_id": None,
+                        "selected_media_mode": args.media_mode,
                     }
                 )
             )
@@ -289,6 +314,7 @@ def main() -> int:
         "lifecycle_error": lifecycle_error,
         "error": entry.error,
         "entry": asdict(entry),
+        "selected_media_mode": args.media_mode,
     }
     print(_result_line(payload))
 

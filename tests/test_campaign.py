@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import threading
 import time
+from dataclasses import replace
 
 import pytest
 
@@ -92,6 +93,7 @@ def test_campaign_expands_repetitions_without_mutating_scenario_truth() -> None:
     assert plan.call_count == 3
     assert plan.destination == ALLOWED_TEST_NUMBER
     assert plan.max_parallel_calls == 2
+    assert plan.media_mode == "v3"
     assert tuple(case.repetition for case in plan.cases) == (1, 2, 3)
     assert all(case.objective == scenario.objective for case in plan.cases)
     assert all(case.test_targets == scenario.test_targets for case in plan.cases)
@@ -194,6 +196,23 @@ def test_valid_campaign_can_cross_live_boundary() -> None:
 
     assert authorization.plan is plan
     assert authorization.confirmation_token == CAMPAIGN_CONFIRMATION_TOKEN
+
+
+def test_live_campaign_rejects_non_v3_media_contract() -> None:
+    plan = replace(
+        build_campaign_plan(
+            policy(dry_run=False),
+            cases=(CampaignCaseSpec("autonomous-phone-diagnostic"),),
+        ),
+        media_mode="legacy",
+    )
+
+    with pytest.raises(CampaignSafetyError, match="media_mode='v3'"):
+        authorize_live_campaign(
+            plan,
+            live_requested=True,
+            confirmation_token=CAMPAIGN_CONFIRMATION_TOKEN,
+        )
 
 
 def test_campaign_runner_respects_configured_parallelism() -> None:

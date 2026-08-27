@@ -262,6 +262,7 @@ def main() -> int:
                     "parallel": plan.max_parallel_calls,
                     "destination": plan.destination,
                     "campaign_worst_case_usd": str(campaign_worst_case),
+                    "selected_media_mode": plan.media_mode,
                     "dry_run": True,
                     "telephony_enabled": False,
                 },
@@ -286,6 +287,7 @@ def main() -> int:
         authorization_path,
         {
             "campaign_id": plan.campaign_id,
+            "selected_media_mode": plan.media_mode,
             "authorized": True,
             "authorization_boundary": "campaign",
             # Records that no token is persisted; this value contains no secret.
@@ -308,6 +310,7 @@ def main() -> int:
         result_path,
         {
             "campaign_id": result.campaign_id,
+            "selected_media_mode": authorization.plan.media_mode,
             "evaluation_pack_id": selected_pack_id,
             "completed_count": result.completed_count,
             "failed_count": result.failed_count,
@@ -349,6 +352,7 @@ def main() -> int:
                 ),
                 "retry_policy": "none",
                 "campaign_worst_case_usd": str(campaign_worst_case),
+                "selected_media_mode": authorization.plan.media_mode,
             },
             indent=2,
         )

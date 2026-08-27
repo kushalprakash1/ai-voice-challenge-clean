@@ -20,7 +20,7 @@ import socket
 import threading
 import time
 from collections.abc import Callable, Mapping
-from contextlib import contextmanager
+from contextlib import closing, contextmanager
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Protocol
@@ -186,7 +186,7 @@ class V3AsteriskMediaResult:
 
 @contextmanager
 def _recording_context(
-    connection: socket.socket,
+    connection: socket.socket | None,
     *,
     root: Path,
     scenario: Any,
@@ -196,7 +196,8 @@ def _recording_context(
         with RunArtifactRecorder(root=root, scenario=scenario) as recorder:
             yield recorder
     except BaseException:
-        connection.close()
+        if connection is not None:
+            connection.close()
         raise
 
 
@@ -1012,6 +1013,11 @@ def execute_v3_asterisk_media(
     with (
         LiveAudioMonitor.from_environment() as live_monitor,
         socket.socket(socket.AF_INET, socket.SOCK_STREAM) as server,
+        _recording_context(
+            None,
+            root=artifact_root,
+            scenario=scenario,
+        ) as recorder,
     ):
         server.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
         server.bind((host, port))
@@ -1025,6 +1031,7 @@ def execute_v3_asterisk_media(
             raise CallExecutionError(
                 "V3 Asterisk media requires an asynchronous originate owner."
             )
+        recorder.record_event("media_runtime_selected", media_mode="v3")
         pending_originate = start_originate()
 
         try:
@@ -1038,11 +1045,7 @@ def execute_v3_asterisk_media(
 
         with (
             _pending_originate_lifecycle(pending_originate),
-            _recording_context(
-                connection,
-                root=artifact_root,
-                scenario=scenario,
-            ) as recorder,
+            closing(connection),
         ):
             recorder.record_event(
                 "suite_adapter_call_started",

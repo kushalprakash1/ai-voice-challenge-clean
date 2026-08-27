@@ -247,6 +247,10 @@ def test_uuid_starts_runtime_and_processes_pcm_before_originate_response(
 
     outcome: list[object] = []
 
+    def start_originate():
+        events.append("originate_started")
+        return pending
+
     def execute() -> None:
         outcome.append(
             execute_v3_asterisk_media(
@@ -259,7 +263,7 @@ def test_uuid_starts_runtime_and_processes_pcm_before_originate_response(
                     max_duration_seconds=30,
                 ),
                 call_id=call_id,
-                start_originate=lambda: pending,
+                start_originate=start_originate,
                 pipeline=object(),
                 voice="af_heart",
                 tts_pcm_cache=None,
@@ -279,6 +283,7 @@ def test_uuid_starts_runtime_and_processes_pcm_before_originate_response(
     worker.start()
     assert pcm_submitted.wait(timeout=1.0)
     assert release_originate.is_set() is False
+    assert events.index("media_runtime_selected") < events.index("originate_started")
     assert events.index("idle_started") < events.index("runtime_started")
     assert events.index("runtime_started") < events.index("pcm_submitted")
 
