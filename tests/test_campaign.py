@@ -6,12 +6,14 @@ import time
 import pytest
 
 from voiceprobe.campaign import (
+    CAMPAIGN_CONFIRMATION_TOKEN,
     MAX_CAMPAIGN_PARALLELISM,
     CampaignCaseRequest,
     CampaignCaseResult,
     CampaignCaseSpec,
     CampaignCaseStatus,
     CampaignSafetyError,
+    authorize_live_campaign,
     build_campaign_plan,
     run_campaign,
 )
@@ -49,8 +51,10 @@ class ConcurrentFakeExecutor:
             # Keep workers overlapped long enough for the concurrency assertion
             # without making the unit suite meaningfully slower.
             time.sleep(0.03)
+
             if request.position in self.fail_positions:
                 raise RuntimeError("synthetic campaign worker failure")
+
             return CampaignCaseResult(
                 position=request.position,
                 case_id=request.case_id,
@@ -98,6 +102,92 @@ def test_campaign_parallelism_is_hard_capped() -> None:
             cases=(CampaignCaseSpec("autonomous-phone-diagnostic"),),
             max_parallel_calls=MAX_CAMPAIGN_PARALLELISM + 1,
         )
+
+
+@pytest.mark.parametrize(
+    "campaign_id",
+    (
+        "../escape",
+        "Campaign Uppercase",
+        "a",
+        "campaign/child",
+        "campaign.with.dot",
+        "x" * 65,
+    ),
+)
+def test_campaign_rejects_unsafe_campaign_ids(campaign_id: str) -> None:
+    with pytest.raises(CampaignSafetyError, match="Campaign ID"):
+        build_campaign_plan(
+            policy(),
+            cases=(CampaignCaseSpec("autonomous-phone-diagnostic"),),
+            campaign_id=campaign_id,
+        )
+
+
+def test_campaign_rejects_unbounded_evaluation_focus() -> None:
+    with pytest.raises(CampaignSafetyError, match="evaluation_focus"):
+        build_campaign_plan(
+            policy(),
+            cases=(
+                CampaignCaseSpec(
+                    "autonomous-phone-diagnostic",
+                    evaluation_focus="x" * 501,
+                ),
+            ),
+        )
+
+
+def test_dry_run_campaign_cannot_cross_live_boundary() -> None:
+    plan = build_campaign_plan(
+        policy(dry_run=True),
+        cases=(CampaignCaseSpec("autonomous-phone-diagnostic"),),
+    )
+
+    with pytest.raises(CampaignSafetyError, match="dry_run"):
+        authorize_live_campaign(
+            plan,
+            live_requested=True,
+            confirmation_token=CAMPAIGN_CONFIRMATION_TOKEN,
+        )
+
+
+def test_campaign_live_request_and_exact_token_are_required() -> None:
+    plan = build_campaign_plan(
+        policy(dry_run=False),
+        cases=(CampaignCaseSpec("autonomous-phone-diagnostic"),),
+    )
+
+    with pytest.raises(CampaignSafetyError, match="explicit live request"):
+        authorize_live_campaign(
+            plan,
+            live_requested=False,
+            confirmation_token=CAMPAIGN_CONFIRMATION_TOKEN,
+        )
+
+    with pytest.raises(CampaignSafetyError, match="confirmation token"):
+        authorize_live_campaign(
+            plan,
+            live_requested=True,
+            confirmation_token="wrong-token",
+        )
+
+
+def test_valid_campaign_can_cross_live_boundary() -> None:
+    plan = build_campaign_plan(
+        policy(dry_run=False),
+        cases=(CampaignCaseSpec("autonomous-phone-diagnostic", repetitions=2),),
+        max_parallel_calls=2,
+        campaign_id="campaign-live-test",
+    )
+
+    authorization = authorize_live_campaign(
+        plan,
+        live_requested=True,
+        confirmation_token=CAMPAIGN_CONFIRMATION_TOKEN,
+    )
+
+    assert authorization.plan is plan
+    assert authorization.confirmation_token == CAMPAIGN_CONFIRMATION_TOKEN
 
 
 def test_campaign_runner_respects_configured_parallelism() -> None:
