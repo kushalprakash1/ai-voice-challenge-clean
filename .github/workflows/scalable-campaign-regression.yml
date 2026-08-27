@@ -1,0 +1,74 @@
+name: Scalable Campaign Regression
+
+on:
+  push:
+    branches:
+      - feature/scalable-evaluation-campaigns
+  pull_request:
+    paths:
+      - "src/voiceprobe/campaign.py"
+      - "src/voiceprobe/campaign_subprocess.py"
+      - "src/voiceprobe/run_campaign.py"
+      - "src/voiceprobe/run_campaign_case.py"
+      - "src/voiceprobe/telephony/audiosocket_dispatcher.py"
+      - "tests/test_campaign.py"
+      - "tests/test_campaign_subprocess.py"
+      - "tests/test_audiosocket_dispatcher.py"
+      - "tests/test_execution.py"
+      - "tests/test_runner.py"
+      - ".github/workflows/scalable-campaign-regression.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  campaign-regression:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v6
+        with:
+          enable-cache: true
+
+      - name: Install locked dependencies
+        run: uv sync --frozen --group dev
+
+      - name: Lint campaign implementation
+        run: >-
+          uv run ruff check
+          src/voiceprobe/campaign.py
+          src/voiceprobe/campaign_subprocess.py
+          src/voiceprobe/run_campaign.py
+          src/voiceprobe/run_campaign_case.py
+          src/voiceprobe/telephony/audiosocket_dispatcher.py
+          tests/test_campaign.py
+          tests/test_campaign_subprocess.py
+          tests/test_audiosocket_dispatcher.py
+
+      - name: Static security scan of campaign boundary
+        run: >-
+          uv run bandit -q
+          src/voiceprobe/campaign.py
+          src/voiceprobe/campaign_subprocess.py
+          src/voiceprobe/run_campaign.py
+          src/voiceprobe/run_campaign_case.py
+          src/voiceprobe/telephony/audiosocket_dispatcher.py
+
+      - name: Run campaign and original execution regressions
+        run: >-
+          uv run pytest -q
+          tests/test_campaign.py
+          tests/test_campaign_subprocess.py
+          tests/test_audiosocket_dispatcher.py
+          tests/test_execution.py
+          tests/test_runner.py
