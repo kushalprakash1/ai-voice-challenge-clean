@@ -211,6 +211,14 @@ def test_campaign_runner_respects_configured_parallelism() -> None:
     assert result.completed_count == 6
     assert result.failed_count == 0
     assert executor.max_active == 3
+    # Generic executor overlap is not subprocess evidence.
+    assert result.maximum_simultaneous_active_workers == 0
+    assert result.wall_clock_seconds is not None
+    assert result.wall_clock_seconds >= max(
+        entry.duration_seconds or 0 for entry in result.entries
+    )
+    assert all(entry.started_at and entry.ended_at for entry in result.entries)
+    assert all(entry.attempt_count == 1 for entry in result.entries)
     assert sorted(executor.attempts) == [1, 2, 3, 4, 5, 6]
     assert all(attempts == 1 for attempts in executor.attempts.values())
 

@@ -16,10 +16,17 @@ import argparse
 import json
 import os
 from dataclasses import asdict, replace
+from datetime import UTC, datetime
 from decimal import Decimal
 from pathlib import Path
 from uuid import UUID
 
+from voiceprobe.campaign_evidence import (
+    CampaignEvidenceError,
+    initialize_lifecycle,
+    lifecycle_path,
+    update_lifecycle,
+)
 from voiceprobe.config import Settings
 from voiceprobe.execution import (
     authorize_live_execution,
@@ -52,6 +59,32 @@ CASE_RESULT_PREFIX = "VOICEPROBE_CAMPAIGN_CASE_RESULT="
 
 def _result_line(payload: dict[str, object]) -> str:
     return CASE_RESULT_PREFIX + json.dumps(payload, sort_keys=True, default=str)
+
+
+def _optional_resource_evidence() -> tuple[dict[str, object], str | None]:
+    try:
+        import resource
+
+        usage = resource.getrusage(resource.RUSAGE_SELF)
+        return (
+            {
+                "cpu_user_seconds": usage.ru_utime,
+                "cpu_system_seconds": usage.ru_stime,
+                "max_rss": usage.ru_maxrss,
+                "max_rss_unit": "KiB on Linux; platform-native ru_maxrss otherwise",
+            },
+            None,
+        )
+    except (ImportError, OSError, ValueError) as error:
+        return {}, f"{type(error).__name__}: {error}"
+
+
+def _finalize_lifecycle(path: Path, payload: dict[str, object]) -> str | None:
+    try:
+        update_lifecycle(path, payload)
+    except (CampaignEvidenceError, OSError) as error:
+        return f"{type(error).__name__}: {error}"
+    return None
 
 
 def main() -> int:
@@ -104,6 +137,29 @@ def main() -> int:
             f"{MAX_CALL_DURATION_SECONDS}"
         )
 
+    try:
+        worker_lifecycle_path = lifecycle_path(
+            campaign_id=args.campaign_id,
+            position=args.position,
+            case_id=args.case_id,
+        )
+    except CampaignEvidenceError as error:
+        parser.error(str(error))
+
+    lifecycle = {
+        "worker_pid": os.getpid(),
+        "worker_started_at": datetime.now(UTC).isoformat(),
+        "worker_port": worker_port,
+        "call_uuid": str(call_id),
+        "execution_id": args.execution_id,
+        "artifact_run_id": None,
+        "terminal": False,
+    }
+    try:
+        initialize_lifecycle(worker_lifecycle_path, lifecycle)
+    except CampaignEvidenceError as error:
+        parser.error(str(error))
+
     # Campaign workers are processes, so scenario/runtime environment cannot
     # leak between concurrent calls. Explicitly clear run_one-only monitoring
     # behavior because multiple local ffplay monitors are not part of the
@@ -111,87 +167,111 @@ def main() -> int:
     os.environ["VOICEPROBE_SCENARIO"] = args.scenario
     os.environ["VOICEPROBE_LIVE_MONITOR"] = "0"
 
-    settings = Settings()  # type: ignore[call-arg]
-    base_policy = settings.call_policy()
-    policy = replace(
-        base_policy,
-        dry_run=not args.live,
-        max_call_duration_seconds=args.max_call_duration_seconds,
-    )
-
-    scenario = get_scenario(args.scenario)
-    suite = build_suite_plan(policy, scenarios=(scenario,))
-    manifest = prepare_execution(
-        policy,
-        suite,
-        execution_id=args.execution_id,
-    )
-
-    manifest_path = write_execution_manifest(manifest)
-    execution_dir = manifest_path.parent
-
-    if not args.live:
-        print(
-            _result_line(
-                {
-                    "campaign_id": args.campaign_id,
-                    "case_id": args.case_id,
-                    "position": args.position,
-                    "scenario_id": args.scenario,
-                    "execution_id": manifest.execution_id,
-                    "manifest_path": str(manifest_path),
-                    "worker_port": worker_port,
-                    "call_id": str(call_id),
-                    "dry_run": True,
-                    "status": "completed",
-                    "artifact_run_id": None,
-                }
-            )
-        )
-        return 0
-
-    require_live_destination()
-
-    authorization = authorize_live_execution(
-        manifest,
-        live_requested=True,
-        confirmation_token=args.confirm,
-    )
-
-    budget_policy = BudgetPolicy(
-        total_budget_usd=Decimal(args.budget_usd),
-        max_provider_rate_per_minute_usd=Decimal(args.max_rate_per_minute_usd),
-    )
-    call_ledger = PersistentCallLedger.initialize(
-        authorization,
-        path=execution_dir / "calls.json",
-    )
-    budget_ledger = PersistentBudgetLedger.initialize(
-        execution_id=manifest.execution_id,
-        policy=budget_policy,
-        path=execution_dir / "budget.json",
-    )
-
-    ami_config = load_ami_config(args.ami_env)
-    adapter = AsteriskAssessmentCallAdapter(
-        ami_config=ami_config,
-        expected_originating_number=manifest.originating_number,
-        port=worker_port,
-        call_id_factory=lambda: call_id,
-    )
-
     try:
-        result = run_persistent_authorized_suite(
-            authorization,
-            adapter,
-            call_ledger=call_ledger,
-            budget_ledger=budget_ledger,
+        settings = Settings()  # type: ignore[call-arg]
+        base_policy = settings.call_policy()
+        policy = replace(
+            base_policy,
+            dry_run=not args.live,
+            max_call_duration_seconds=args.max_call_duration_seconds,
         )
-    finally:
-        adapter.close()
+
+        scenario = get_scenario(args.scenario)
+        suite = build_suite_plan(policy, scenarios=(scenario,))
+        manifest = prepare_execution(
+            policy,
+            suite,
+            execution_id=args.execution_id,
+        )
+
+        manifest_path = write_execution_manifest(manifest)
+        execution_dir = manifest_path.parent
+
+        if not args.live:
+            print(
+                _result_line(
+                    {
+                        "campaign_id": args.campaign_id,
+                        "case_id": args.case_id,
+                        "position": args.position,
+                        "scenario_id": args.scenario,
+                        "execution_id": manifest.execution_id,
+                        "manifest_path": str(manifest_path),
+                        "worker_port": worker_port,
+                        "call_id": str(call_id),
+                        "dry_run": True,
+                        "status": "completed",
+                        "artifact_run_id": None,
+                    }
+                )
+            )
+            return 0
+
+        require_live_destination()
+
+        authorization = authorize_live_execution(
+            manifest,
+            live_requested=True,
+            confirmation_token=args.confirm,
+        )
+
+        budget_policy = BudgetPolicy(
+            total_budget_usd=Decimal(args.budget_usd),
+            max_provider_rate_per_minute_usd=Decimal(args.max_rate_per_minute_usd),
+        )
+        call_ledger = PersistentCallLedger.initialize(
+            authorization,
+            path=execution_dir / "calls.json",
+        )
+        budget_ledger = PersistentBudgetLedger.initialize(
+            execution_id=manifest.execution_id,
+            policy=budget_policy,
+            path=execution_dir / "budget.json",
+        )
+
+        ami_config = load_ami_config(args.ami_env)
+        adapter = AsteriskAssessmentCallAdapter(
+            ami_config=ami_config,
+            expected_originating_number=manifest.originating_number,
+            port=worker_port,
+            call_id_factory=lambda: call_id,
+        )
+
+        try:
+            result = run_persistent_authorized_suite(
+                authorization,
+                adapter,
+                call_ledger=call_ledger,
+                budget_ledger=budget_ledger,
+            )
+        finally:
+            adapter.close()
+    except Exception as error:
+        lifecycle.update(
+            {
+                "worker_ended_at": datetime.now(UTC).isoformat(),
+                "status": "failed",
+                "terminal": True,
+                "setup_or_call_error": f"{type(error).__name__}: {error}",
+            }
+        )
+        _finalize_lifecycle(worker_lifecycle_path, lifecycle)
+        raise
 
     entry = result.entries[0]
     status = "completed" if result.failed_count == 0 else "failed"
+    resource_evidence, telemetry_error = _optional_resource_evidence()
+    lifecycle.update(
+        {
+            "worker_ended_at": datetime.now(UTC).isoformat(),
+            "artifact_run_id": entry.artifact_run_id,
+            "status": status,
+            "terminal": True,
+            **resource_evidence,
+            "telemetry_error": telemetry_error,
+        }
+    )
+    lifecycle_error = _finalize_lifecycle(worker_lifecycle_path, lifecycle)
     payload = {
         "campaign_id": args.campaign_id,
         "case_id": args.case_id,
@@ -205,6 +285,8 @@ def main() -> int:
         "artifact_run_id": entry.artifact_run_id,
         "provider_call_id": entry.provider_call_id,
         "duration_seconds": entry.duration_seconds,
+        "telemetry_error": telemetry_error,
+        "lifecycle_error": lifecycle_error,
         "error": entry.error,
         "entry": asdict(entry),
     }

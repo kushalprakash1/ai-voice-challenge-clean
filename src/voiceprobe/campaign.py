@@ -13,8 +13,11 @@ concurrency testable without dialing.
 from __future__ import annotations
 
 import re
+import threading
+import time
 from concurrent.futures import Future, ThreadPoolExecutor, as_completed
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
+from datetime import UTC, datetime
 from enum import StrEnum
 from typing import Protocol, runtime_checkable
 from uuid import uuid4
@@ -126,6 +129,28 @@ class CampaignCaseResult:
     execution_id: str | None = None
     artifact_run_id: str | None = None
     error: str | None = None
+    started_at: str | None = None
+    ended_at: str | None = None
+    duration_seconds: float | None = None
+    call_duration_seconds: float | None = None
+    attempt_count: int = 1
+    worker_pid: int | None = None
+    worker_port: int | None = None
+    call_uuid: str | None = None
+    route_registered: bool | None = None
+    route_consumed: bool | None = None
+    route_released: bool | None = None
+    subprocess_exit_code: int | None = None
+    timed_out: bool = False
+    cpu_user_seconds: float | None = None
+    cpu_system_seconds: float | None = None
+    max_rss: int | None = None
+    max_rss_unit: str | None = None
+    telemetry_error: str | None = None
+    lifecycle_error: str | None = None
+    evidence_validation_error: str | None = None
+    worker_connection_established: bool | None = None
+    uuid_forwarded: bool | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -134,6 +159,10 @@ class CampaignRunResult:
 
     campaign_id: str
     entries: tuple[CampaignCaseResult, ...]
+    started_at: str | None = None
+    ended_at: str | None = None
+    wall_clock_seconds: float | None = None
+    maximum_simultaneous_active_workers: int = 0
 
     @property
     def completed_count(self) -> int:
@@ -377,8 +406,31 @@ def run_campaign(
     if parallelism > plan.call_count:
         raise CampaignExecutionError("Campaign parallelism exceeds call count.")
 
+    campaign_started_at = datetime.now(UTC).isoformat()
+    campaign_started = time.monotonic()
+    activity_lock = threading.Lock()
+    attempts: dict[int, int] = {}
     results: dict[int, CampaignCaseResult] = {}
     futures: dict[Future[CampaignCaseResult], int] = {}
+
+    def execute_observed(request: CampaignCaseRequest) -> CampaignCaseResult:
+        started_at = datetime.now(UTC).isoformat()
+        started = time.monotonic()
+        with activity_lock:
+            attempts[request.position] = attempts.get(request.position, 0) + 1
+            attempt_count = attempts[request.position]
+        result = _execute_one(executor, request)
+        return replace(
+            result,
+            started_at=result.started_at or started_at,
+            ended_at=result.ended_at or datetime.now(UTC).isoformat(),
+            duration_seconds=(
+                result.duration_seconds
+                if result.duration_seconds is not None
+                else time.monotonic() - started
+            ),
+            attempt_count=attempt_count,
+        )
 
     with ThreadPoolExecutor(
         max_workers=parallelism,
@@ -386,7 +438,7 @@ def run_campaign(
     ) as pool:
         for case in plan.cases:
             request = _request_for(plan, case)
-            future = pool.submit(_execute_one, executor, request)
+            future = pool.submit(execute_observed, request)
             futures[future] = case.position
 
         for future in as_completed(futures):
@@ -415,4 +467,10 @@ def run_campaign(
     return CampaignRunResult(
         campaign_id=plan.campaign_id,
         entries=ordered,
+        started_at=campaign_started_at,
+        ended_at=datetime.now(UTC).isoformat(),
+        wall_clock_seconds=time.monotonic() - campaign_started,
+        maximum_simultaneous_active_workers=int(
+            getattr(executor, "maximum_simultaneous_active_workers", 0)
+        ),
     )

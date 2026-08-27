@@ -96,11 +96,18 @@ def test_dispatcher_routes_by_uuid_and_preserves_first_frame() -> None:
             assert recv_exact(client, 5) == b"reply"
 
         assert dispatcher.registered_count == 0
+        assert dispatcher.was_consumed(call_id) is True
+        assert dispatcher.is_registered(call_id) is False
+        assert dispatcher.was_connected(call_id) is True
+        assert dispatcher.was_forwarded(call_id) is True
 
     worker_thread.join(timeout=1.0)
     assert not worker_thread.is_alive()
     assert observed["first"] == _uuid_frame(call_id)
     assert observed["payload"] == b"hello"
+    assert dispatcher.was_consumed(call_id) is False
+    assert dispatcher.was_connected(call_id) is False
+    assert dispatcher.was_forwarded(call_id) is False
 
 
 def test_unknown_uuid_is_not_forwarded_to_registered_worker() -> None:
@@ -121,6 +128,7 @@ def test_unknown_uuid_is_not_forwarded_to_registered_worker() -> None:
 
         # Unknown traffic cannot consume another call's one-shot route.
         assert dispatcher.registered_count == 1
+        assert dispatcher.was_consumed(expected) is False
 
 
 def test_incomplete_uuid_handshake_times_out_without_consuming_route() -> None:

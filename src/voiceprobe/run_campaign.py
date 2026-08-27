@@ -311,6 +311,13 @@ def main() -> int:
             "evaluation_pack_id": selected_pack_id,
             "completed_count": result.completed_count,
             "failed_count": result.failed_count,
+            "started_at": result.started_at,
+            "ended_at": result.ended_at,
+            "wall_clock_seconds": result.wall_clock_seconds,
+            "maximum_simultaneous_active_workers": (
+                result.maximum_simultaneous_active_workers
+            ),
+            "retry_policy": "none",
             "entries": [asdict(entry) for entry in result.entries],
         },
     )
@@ -336,6 +343,11 @@ def main() -> int:
                 "completed_count": result.completed_count,
                 "failed_count": result.failed_count,
                 "failure_rate": report.failure_rate,
+                "wall_clock_seconds": result.wall_clock_seconds,
+                "maximum_simultaneous_active_workers": (
+                    result.maximum_simultaneous_active_workers
+                ),
+                "retry_policy": "none",
                 "campaign_worst_case_usd": str(campaign_worst_case),
             },
             indent=2,

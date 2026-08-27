@@ -105,6 +105,9 @@ class AudioSocketDispatcher:
             uuid_handshake_timeout_seconds
         )
         self._routes: dict[UUID, AudioSocketRoute] = {}
+        self._consumed_routes: set[UUID] = set()
+        self._connected_routes: set[UUID] = set()
+        self._forwarded_routes: set[UUID] = set()
         self._lock = threading.Lock()
         self._stop = threading.Event()
         self._ready = threading.Event()
@@ -120,6 +123,26 @@ class AudioSocketDispatcher:
     def registered_count(self) -> int:
         with self._lock:
             return len(self._routes)
+
+    def is_registered(self, call_id: UUID) -> bool:
+        """Return whether a one-shot route is still pending consumption."""
+
+        with self._lock:
+            return call_id in self._routes
+
+    def was_consumed(self, call_id: UUID) -> bool:
+        """Return whether the dispatcher consumed the UUID route."""
+
+        with self._lock:
+            return call_id in self._consumed_routes
+
+    def was_connected(self, call_id: UUID) -> bool:
+        with self._lock:
+            return call_id in self._connected_routes
+
+    def was_forwarded(self, call_id: UUID) -> bool:
+        with self._lock:
+            return call_id in self._forwarded_routes
 
     def register(self, call_id: UUID, worker_port: int) -> AudioSocketRoute:
         """Register a one-shot route before its AMI Originate may occur."""
@@ -211,6 +234,11 @@ class AudioSocketDispatcher:
         for session_thread in session_threads:
             session_thread.join(timeout=2.0)
 
+        with self._lock:
+            self._consumed_routes.clear()
+            self._connected_routes.clear()
+            self._forwarded_routes.clear()
+
     def __enter__(self) -> Self:
         self.start()
         return self
@@ -276,6 +304,8 @@ class AudioSocketDispatcher:
 
             with self._lock:
                 route = self._routes.pop(call_id, None)
+                if route is not None:
+                    self._consumed_routes.add(call_id)
 
             # Unknown or already-consumed UUIDs are never forwarded.
             if route is None:
@@ -287,10 +317,14 @@ class AudioSocketDispatcher:
             )
             upstream.settimeout(None)
             downstream.settimeout(None)
+            with self._lock:
+                self._connected_routes.add(call_id)
 
             # Preserve the exact first AudioSocket frame for the existing
             # worker. Downstream v2/v3 UUID validation therefore stays intact.
             upstream.sendall(header + payload)
+            with self._lock:
+                self._forwarded_routes.add(call_id)
 
             left = threading.Thread(
                 target=self._pump,
