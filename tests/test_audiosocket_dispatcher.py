@@ -24,13 +24,16 @@ def _uuid_frame(call_id) -> bytes:
 def _available_worker_port() -> int:
     for port in range(9500, 9600):
         candidate = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+
         try:
             candidate.bind((DISPATCH_HOST, port))
         except OSError:
             candidate.close()
             continue
+
         candidate.close()
         return port
+
     raise RuntimeError("No free test worker port found.")
 
 
@@ -69,6 +72,7 @@ def test_dispatcher_routes_by_uuid_and_preserves_first_frame() -> None:
             server.listen(1)
             worker_ready.set()
             connection, _ = server.accept()
+
             with connection:
                 first = recv_exact(connection, 19)
                 payload = recv_exact(connection, 5)
@@ -83,7 +87,10 @@ def test_dispatcher_routes_by_uuid_and_preserves_first_frame() -> None:
     with AudioSocketDispatcher() as dispatcher:
         dispatcher.register(call_id, worker_port)
 
-        with socket.create_connection((DISPATCH_HOST, DISPATCH_PORT), timeout=1.0) as client:
+        with socket.create_connection(
+            (DISPATCH_HOST, DISPATCH_PORT),
+            timeout=1.0,
+        ) as client:
             frame = _uuid_frame(call_id)
             client.sendall(frame + b"hello")
             assert recv_exact(client, 5) == b"reply"
@@ -104,10 +111,32 @@ def test_unknown_uuid_is_not_forwarded_to_registered_worker() -> None:
     with AudioSocketDispatcher() as dispatcher:
         dispatcher.register(expected, worker_port)
 
-        with socket.create_connection((DISPATCH_HOST, DISPATCH_PORT), timeout=1.0) as client:
+        with socket.create_connection(
+            (DISPATCH_HOST, DISPATCH_PORT),
+            timeout=1.0,
+        ) as client:
             client.sendall(_uuid_frame(unexpected))
             client.settimeout(1.0)
             assert client.recv(1) == b""
 
         # Unknown traffic cannot consume another call's one-shot route.
+        assert dispatcher.registered_count == 1
+
+
+def test_incomplete_uuid_handshake_times_out_without_consuming_route() -> None:
+    expected = uuid4()
+    worker_port = _available_worker_port()
+
+    with AudioSocketDispatcher(
+        uuid_handshake_timeout_seconds=0.05,
+    ) as dispatcher:
+        dispatcher.register(expected, worker_port)
+
+        with socket.create_connection(
+            (DISPATCH_HOST, DISPATCH_PORT),
+            timeout=1.0,
+        ) as client:
+            client.settimeout(1.0)
+            assert client.recv(1) == b""
+
         assert dispatcher.registered_count == 1
