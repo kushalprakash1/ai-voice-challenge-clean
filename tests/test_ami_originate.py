@@ -182,7 +182,10 @@ def test_successful_originate_sends_exact_protocol() -> None:
 
     assert b"Events: call\r\n" in sent
     assert b"Action: Originate\r\n" in sent
-    assert b"Channel: Local/+12025550101@voiceprobe-test\r\n" in sent
+    assert sent.count(
+        b"Channel: Local/+12025550101@voiceprobe-test/n\r\n"
+    ) == 1
+    assert b"Channel: Local/+12025550101@voiceprobe-test\r\n" not in sent
     assert b"Application: AudioSocket\r\n" in sent
     assert (b"Data: 550e8400-e29b-41d4-a716-446655440000,127.0.0.1:9019\r\n") in sent
     assert b"Timeout: 30000\r\n" in sent
@@ -192,6 +195,7 @@ def test_successful_originate_sends_exact_protocol() -> None:
     assert result.action_id == "originate-1"
     assert result.audiosocket_call_id == CALL_ID
     assert result.asterisk_unique_id == "1750000000.123"
+    assert result.channel == "Local/+12025550101@voiceprobe-test-00000001;1"
     assert result.response == "Success"
 
 
