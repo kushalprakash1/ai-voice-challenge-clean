@@ -102,3 +102,12 @@ jobs:
           tests/test_asterisk_adapter.py
           tests/test_run_one_budget.py
           tests/test_run_one_live_policy.py
+
+      - name: Exercise production-smoke campaign dry-run CLI
+        env:
+          VOICEPROBE_ORIGINATING_NUMBER: "+12025550101"
+        run: >-
+          uv run python -m voiceprobe.run_campaign
+          --pack production-smoke
+          --parallel 3
+          --campaign-id ci-production-smoke
