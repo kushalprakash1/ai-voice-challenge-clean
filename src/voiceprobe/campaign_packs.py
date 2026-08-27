@@ -17,12 +17,25 @@ from voiceprobe.scenarios.catalog import get_scenario, list_scenarios
 
 
 @dataclass(frozen=True, slots=True)
+class GoldCaseProvenance:
+    """Preserved submission evidence attached to an existing scenario."""
+
+    call_number: int
+    scenario_id: str
+    run_id: str | None
+    evaluation_focus: str
+    transcript_path: str
+    expected_runtime_owner: str
+
+
+@dataclass(frozen=True, slots=True)
 class EvaluationPack:
     """Named, deterministic collection of bug-finding campaign cases."""
 
     pack_id: str
     description: str
     cases: tuple[CampaignCaseSpec, ...]
+    gold_cases: tuple[GoldCaseProvenance, ...] = ()
 
 
 def _case(scenario_id: str, focus: str) -> CampaignCaseSpec:
@@ -158,17 +171,75 @@ PRODUCTION_SMOKE: Final = EvaluationPack(
 )
 
 
+_GOLD_CASES: Final = (
+    GoldCaseProvenance(
+        1,
+        "doctor-specialist-directory",
+        None,
+        "Doctor directory, identity spelling, and provider context.",
+        "submission/calls/call-01-doctor-directory/transcript.txt",
+        "DoctorSpecialistDirectoryScenario + PrerequisiteOverlay",
+    ),
+    GoldCaseProvenance(
+        2,
+        "farthest-date-scheduling",
+        "20260820T192304.183872Z-farthest-date-scheduling",
+        "Farthest-date selection, constraint relaxation, and slot acceptance.",
+        "submission/calls/call-02-farthest-date-scheduling/transcript.txt",
+        "FarthestDatePolicy",
+    ),
+    GoldCaseProvenance(
+        3,
+        "office-hours-location-insurance",
+        "20260820T003326.444994Z-office-hours-location-insurance",
+        "Self-pay, location switching, and office-hours context.",
+        "submission/calls/call-03-office-information/transcript.txt",
+        "SelfPayLocationSwitchScenario + PrerequisiteOverlay",
+    ),
+    GoldCaseProvenance(
+        4,
+        "medication-refill-correction",
+        "20260819T224034.555463Z-medication-refill-correction",
+        "Medication workflow and correction retention.",
+        "submission/calls/call-04-medication-workflow/transcript.txt",
+        "MedicationRefillCorrectionScenario + PrerequisiteOverlay",
+    ),
+    GoldCaseProvenance(
+        5,
+        "medication-refill-correction",
+        "20260819T221459.541064Z-medication-refill-correction",
+        "Escalation handoff after the refill workflow.",
+        "submission/calls/call-05-escalation-handoff/transcript.txt",
+        "MedicationRefillCorrectionScenario + PrerequisiteOverlay",
+    ),
+    GoldCaseProvenance(
+        6,
+        "booking-confirmation-robustness",
+        "20260820T083002.157315Z-booking-confirmation-robustness",
+        "Concrete acceptance versus confirmed booking completion.",
+        "submission/calls/call-06-booking-completion/transcript.txt",
+        "SchedulingFlowController",
+    ),
+)
+
+GOLD_SIX: Final = EvaluationPack(
+    pack_id="gold-six",
+    description="The six preserved final submission gold calls, in presentation order.",
+    cases=tuple(_case(case.scenario_id, case.evaluation_focus) for case in _GOLD_CASES),
+    gold_cases=_GOLD_CASES,
+)
+
+
 _CURATED_PACKS: Final[tuple[EvaluationPack, ...]] = (
     BOOKING_INTEGRITY,
     STATE_RETENTION,
     IDENTITY_GROUNDING,
     CONVERSATION_RECOVERY,
     PRODUCTION_SMOKE,
+    GOLD_SIX,
 )
 
-_PACK_BY_ID: Final = MappingProxyType(
-    {pack.pack_id: pack for pack in _CURATED_PACKS}
-)
+_PACK_BY_ID: Final = MappingProxyType({pack.pack_id: pack for pack in _CURATED_PACKS})
 
 if len(_PACK_BY_ID) != len(_CURATED_PACKS):
     raise RuntimeError("Evaluation pack catalog contains duplicate pack IDs.")

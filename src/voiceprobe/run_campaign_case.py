@@ -15,7 +15,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
-from dataclasses import asdict, replace
+from dataclasses import asdict
 from datetime import UTC, datetime
 from decimal import Decimal
 from pathlib import Path
@@ -29,16 +29,6 @@ from voiceprobe.campaign_evidence import (
     update_lifecycle,
 )
 from voiceprobe.config import Settings
-from voiceprobe.execution import (
-    authorize_live_execution,
-    prepare_execution,
-    write_execution_manifest,
-)
-from voiceprobe.execution_state import (
-    BudgetPolicy,
-    PersistentBudgetLedger,
-    PersistentCallLedger,
-)
 from voiceprobe.policy import (
     DEFAULT_MAX_CALL_DURATION_SECONDS,
     MAX_CALL_DURATION_SECONDS,
@@ -46,16 +36,13 @@ from voiceprobe.policy import (
 from voiceprobe.run_one import (
     DEFAULT_AMI_ENV,
     DEFAULT_MAX_PROVIDER_RATE_PER_MINUTE_USD,
+    OneCallTransportOverrides,
+    execute_one_call,
     load_ami_config,
+    prepare_one_call_contract,
 )
-from voiceprobe.runner import run_persistent_authorized_suite
-from voiceprobe.safety import require_live_destination
-from voiceprobe.scenarios.catalog import get_scenario, list_scenarios
-from voiceprobe.suite import build_suite_plan
-from voiceprobe.telephony.asterisk_adapter import (
-    AsteriskAssessmentCallAdapter,
-    v3_live_enabled_from_environment,
-)
+from voiceprobe.scenarios.catalog import list_scenarios
+from voiceprobe.telephony.asterisk_adapter import v3_live_enabled_from_environment
 from voiceprobe.telephony.audiosocket_dispatcher import validate_worker_port
 from voiceprobe.v3.runtime_dependencies import (
     V3RuntimeDependencyStatus,
@@ -63,6 +50,25 @@ from voiceprobe.v3.runtime_dependencies import (
 )
 
 CASE_RESULT_PREFIX = "VOICEPROBE_CAMPAIGN_CASE_RESULT="
+
+
+def prepare_campaign_one_call(
+    *,
+    settings: Settings,
+    scenario_id: str,
+    live_requested: bool,
+    max_call_duration_seconds: int,
+    execution_id: str,
+):
+    """Delegate campaign metadata to the shared one-call preparation owner."""
+
+    return prepare_one_call_contract(
+        settings=settings,
+        scenario_id=scenario_id,
+        live_requested=live_requested,
+        max_call_duration_seconds=max_call_duration_seconds,
+        execution_id=execution_id,
+    )
 
 
 def _result_line(payload: dict[str, object]) -> str:
@@ -222,24 +228,30 @@ def main() -> int:
                 )
             )
 
-        settings = Settings()  # type: ignore[call-arg]
-        base_policy = settings.call_policy()
-        policy = replace(
-            base_policy,
-            dry_run=not args.live,
+        prepared = prepare_campaign_one_call(
+            settings=Settings(),  # type: ignore[call-arg]
+            scenario_id=args.scenario,
+            live_requested=args.live,
             max_call_duration_seconds=args.max_call_duration_seconds,
-        )
-
-        scenario = get_scenario(args.scenario)
-        suite = build_suite_plan(policy, scenarios=(scenario,))
-        manifest = prepare_execution(
-            policy,
-            suite,
             execution_id=args.execution_id,
         )
-
-        manifest_path = write_execution_manifest(manifest)
-        execution_dir = manifest_path.parent
+        transport = None
+        if args.live:
+            transport = OneCallTransportOverrides(
+                ami_config=load_ami_config(args.ami_env),
+                port=worker_port,
+                call_id_factory=lambda: call_id,
+            )
+        execution = execute_one_call(
+            prepared,
+            live_requested=args.live,
+            confirmation_token=args.confirm,
+            budget_usd=Decimal(args.budget_usd),
+            max_rate_per_minute_usd=Decimal(args.max_rate_per_minute_usd),
+            transport=transport,
+        )
+        manifest = prepared.manifest
+        manifest_path = execution.manifest_path
 
         if not args.live:
             print(
@@ -264,45 +276,9 @@ def main() -> int:
             )
             return 0
 
-        require_live_destination()
-
-        authorization = authorize_live_execution(
-            manifest,
-            live_requested=True,
-            confirmation_token=args.confirm,
-        )
-
-        budget_policy = BudgetPolicy(
-            total_budget_usd=Decimal(args.budget_usd),
-            max_provider_rate_per_minute_usd=Decimal(args.max_rate_per_minute_usd),
-        )
-        call_ledger = PersistentCallLedger.initialize(
-            authorization,
-            path=execution_dir / "calls.json",
-        )
-        budget_ledger = PersistentBudgetLedger.initialize(
-            execution_id=manifest.execution_id,
-            policy=budget_policy,
-            path=execution_dir / "budget.json",
-        )
-
-        ami_config = load_ami_config(args.ami_env)
-        adapter = AsteriskAssessmentCallAdapter(
-            ami_config=ami_config,
-            expected_originating_number=manifest.originating_number,
-            port=worker_port,
-            call_id_factory=lambda: call_id,
-        )
-
-        try:
-            result = run_persistent_authorized_suite(
-                authorization,
-                adapter,
-                call_ledger=call_ledger,
-                budget_ledger=budget_ledger,
-            )
-        finally:
-            adapter.close()
+        result = execution.suite_result
+        if result is None:
+            raise RuntimeError("Live campaign child returned no suite result.")
     except Exception as error:
         lifecycle.update(
             {

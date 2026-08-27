@@ -10,7 +10,7 @@ from pathlib import Path
 
 import pytest
 
-from voiceprobe import run_campaign_case
+from voiceprobe import run_campaign_case, run_one
 from voiceprobe.campaign import (
     CAMPAIGN_CONFIRMATION_TOKEN,
     CampaignCaseRequest,
@@ -240,9 +240,7 @@ def test_non_live_worker_emits_terminal_result_without_telephony(
     def reject_telephony(*_args, **_kwargs):
         raise AssertionError("non-live worker must not attempt telephony")
 
-    monkeypatch.setattr(
-        run_campaign_case, "AsteriskAssessmentCallAdapter", reject_telephony
-    )
+    monkeypatch.setattr(run_one, "AsteriskAssessmentCallAdapter", reject_telephony)
     monkeypatch.setattr(
         run_campaign_case, "preflight_v3_runtime_dependencies", reject_telephony
     )

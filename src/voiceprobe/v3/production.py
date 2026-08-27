@@ -12,50 +12,56 @@ environment verifies the real integration.
 
 from __future__ import annotations
 
-import os
-
 import inspect
+import os
+from collections.abc import Callable
 from dataclasses import dataclass
-from typing import Any, Callable
+from typing import Any
 
-from .flow_state import FlowSnapshot
-from .models import DecisionKind, PolicyDecision
+from voiceprobe.v32.runtime_fallback import (
+    V32SemanticFallbackResolver,
+)
+
+from .doctor_specialist import (
+    SCENARIO_ID as DOCTOR_SPECIALIST_SCENARIO_ID,
+)
+from .doctor_specialist import (
+    DoctorDirectoryQwenRouter,
+    DoctorSpecialistDirectoryScenario,
+)
+from .farthest_date import SCENARIO_ID as FARTHEST_DATE_SCENARIO_ID
+from .farthest_date import FarthestDatePolicy
 from .flow_controller import SchedulingFlowController
+from .flow_state import FlowSnapshot
+from .medication_refill import (
+    MEDICATION,
+    PHARMACY_PREFERENCE,
+    MedicationRefillCorrectionScenario,
+)
+from .medication_refill import (
+    SCENARIO_ID as MEDICATION_REFILL_SCENARIO_ID,
+)
+from .models import DecisionKind, PolicyDecision
+from .prerequisite import (
+    PrerequisiteOverlay,
+    is_high_confidence_initial_profile_prerequisite,
+)
+from .qwen_v3_fallback import (
+    QwenV3FallbackRouter,
+    qwen_v3_fallback_enabled_from_environment,
+)
 from .runtime import (
     FallbackResolver,
     RuntimeDecision,
     VoiceProbeV3Runtime,
 )
-from .semantic_router import V31SemanticRouter
-from .qwen_v3_fallback import (
-    QwenV3FallbackRouter,
-    qwen_v3_fallback_enabled_from_environment,
-)
-from .medication_refill import (
-    MEDICATION,
-    PHARMACY_PREFERENCE,
-    SCENARIO_ID as MEDICATION_REFILL_SCENARIO_ID,
-    MedicationRefillCorrectionScenario,
-)
 from .self_pay_location import (
     SCENARIO_ID as SELF_PAY_LOCATION_SCENARIO_ID,
+)
+from .self_pay_location import (
     SelfPayLocationSwitchScenario,
 )
-from .doctor_specialist import (
-    SCENARIO_ID as DOCTOR_SPECIALIST_SCENARIO_ID,
-    DoctorDirectoryQwenRouter,
-    DoctorSpecialistDirectoryScenario,
-)
-from .farthest_date import SCENARIO_ID as FARTHEST_DATE_SCENARIO_ID, FarthestDatePolicy
-from .prerequisite import (
-    PrerequisiteOverlay,
-    is_high_confidence_initial_profile_prerequisite,
-)
-from voiceprobe.v32.runtime_fallback import (
-    V32SemanticFallbackResolver,
-)
-from .turn_stabilizer import DEFAULT_CONTINUATION_GRACE_MS
-
+from .semantic_router import V31SemanticRouter
 
 DEFAULT_KEYTERMS = (
     "Pivot Point",
@@ -63,6 +69,27 @@ DEFAULT_KEYTERMS = (
     "Blue Cross",
     "new patient consultation",
 )
+
+
+def resolve_runtime_owner(scenario_id: str) -> str:
+    """Describe the scenario-specific owner selected by this production bridge.
+
+    This is read-only introspection of the branches in ``PipecatRuntimeBridge``;
+    it does not construct a router, overlay, controller, or runtime.
+    """
+
+    if scenario_id == DOCTOR_SPECIALIST_SCENARIO_ID:
+        return "DoctorSpecialistDirectoryScenario + PrerequisiteOverlay"
+    if scenario_id == FARTHEST_DATE_SCENARIO_ID:
+        return "FarthestDatePolicy"
+    if scenario_id in {
+        SELF_PAY_LOCATION_SCENARIO_ID,
+        "self-pay-location-switch",
+    }:
+        return "SelfPayLocationSwitchScenario + PrerequisiteOverlay"
+    if scenario_id == MEDICATION_REFILL_SCENARIO_ID:
+        return "MedicationRefillCorrectionScenario + PrerequisiteOverlay"
+    return "SchedulingFlowController"
 
 
 @dataclass(frozen=True, slots=True)

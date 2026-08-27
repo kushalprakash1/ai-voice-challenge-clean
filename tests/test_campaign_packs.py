@@ -8,6 +8,7 @@ from voiceprobe.campaign_packs import (
 )
 from voiceprobe.policy import CallPolicy
 from voiceprobe.scenarios.catalog import get_scenario, list_scenarios
+from voiceprobe.v3.production import resolve_runtime_owner
 
 ORIGINATING_NUMBER = "+12025550101"
 
@@ -20,6 +21,30 @@ def test_curated_pack_ids_are_unique_and_stable() -> None:
     assert "booking-integrity" in evaluation_pack_ids()
     assert "state-retention" in evaluation_pack_ids()
     assert "production-smoke" in evaluation_pack_ids()
+    assert "gold-six" in evaluation_pack_ids()
+
+
+def test_gold_six_is_exact_preserved_submission_benchmark() -> None:
+    pack = get_evaluation_pack("gold-six")
+
+    assert len(pack.cases) == len(pack.gold_cases) == 6
+    assert tuple(case.call_number for case in pack.gold_cases) == tuple(range(1, 7))
+    assert tuple(case.scenario_id for case in pack.gold_cases) == (
+        "doctor-specialist-directory",
+        "farthest-date-scheduling",
+        "office-hours-location-insurance",
+        "medication-refill-correction",
+        "medication-refill-correction",
+        "booking-confirmation-robustness",
+    )
+    assert pack.gold_cases[0].run_id is None
+    assert all(
+        case.transcript_path.endswith("transcript.txt") for case in pack.gold_cases
+    )
+    assert all(
+        case.expected_runtime_owner == resolve_runtime_owner(case.scenario_id)
+        for case in pack.gold_cases
+    )
 
 
 def test_every_curated_pack_case_resolves_existing_scenario() -> None:
