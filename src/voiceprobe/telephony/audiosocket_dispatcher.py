@@ -1,12 +1,12 @@
 """Loopback-only AudioSocket dispatcher for concurrent VoiceProbe workers.
 
 Asterisk continues to connect to the original trusted AudioSocket endpoint on
-127.0.0.1:9019.  The dispatcher consumes only the first UUID frame, resolves a
+127.0.0.1:9019. The dispatcher consumes only the first UUID frame, resolves a
 pre-registered isolated worker port, forwards that exact frame unchanged, and
 then proxies bytes bidirectionally for the lifetime of the call.
 
 The dispatcher never dials, interprets speech, mutates patient state, or makes
-scenario decisions.  It is a transport demultiplexer only.
+scenario decisions. It is a transport demultiplexer only.
 """
 
 from __future__ import annotations
@@ -24,6 +24,7 @@ WORKER_PORT_MIN = 9020
 WORKER_PORT_MAX = 9999
 DEFAULT_ACCEPT_POLL_SECONDS = 0.20
 DEFAULT_CONNECT_TIMEOUT_SECONDS = 5.0
+DEFAULT_UUID_HANDSHAKE_TIMEOUT_SECONDS = 2.0
 DEFAULT_MAX_REGISTERED_SESSIONS = 128
 
 
@@ -42,12 +43,15 @@ class AudioSocketRoute:
 def validate_worker_port(value: int) -> int:
     if isinstance(value, bool) or not isinstance(value, int):
         raise AudioSocketDispatcherError("Worker port must be an integer.")
+
     if not WORKER_PORT_MIN <= value <= WORKER_PORT_MAX:
         raise AudioSocketDispatcherError(
             f"Worker port must be between {WORKER_PORT_MIN} and {WORKER_PORT_MAX}."
         )
+
     if value == DISPATCH_PORT:
         raise AudioSocketDispatcherError("Worker port cannot equal dispatcher port.")
+
     return value
 
 
@@ -60,15 +64,20 @@ class AudioSocketDispatcher:
         host: str = DISPATCH_HOST,
         port: int = DISPATCH_PORT,
         max_registered_sessions: int = DEFAULT_MAX_REGISTERED_SESSIONS,
+        uuid_handshake_timeout_seconds: float = (
+            DEFAULT_UUID_HANDSHAKE_TIMEOUT_SECONDS
+        ),
     ) -> None:
         if host != DISPATCH_HOST:
             raise AudioSocketDispatcherError(
                 "Concurrent AudioSocket dispatcher must remain on 127.0.0.1."
             )
+
         if port != DISPATCH_PORT:
             raise AudioSocketDispatcherError(
                 f"Concurrent AudioSocket dispatcher must remain on port {DISPATCH_PORT}."
             )
+
         if (
             isinstance(max_registered_sessions, bool)
             or not isinstance(max_registered_sessions, int)
@@ -78,9 +87,22 @@ class AudioSocketDispatcher:
                 "max_registered_sessions must be an integer between 1 and 1024."
             )
 
+        if (
+            isinstance(uuid_handshake_timeout_seconds, bool)
+            or not isinstance(uuid_handshake_timeout_seconds, (int, float))
+            or not 0 < uuid_handshake_timeout_seconds <= 10.0
+        ):
+            raise AudioSocketDispatcherError(
+                "uuid_handshake_timeout_seconds must be greater than zero "
+                "and at most 10 seconds."
+            )
+
         self.host = host
         self.port = port
         self.max_registered_sessions = max_registered_sessions
+        self.uuid_handshake_timeout_seconds = float(
+            uuid_handshake_timeout_seconds
+        )
         self._routes: dict[UUID, AudioSocketRoute] = {}
         self._lock = threading.Lock()
         self._stop = threading.Event()
@@ -103,6 +125,7 @@ class AudioSocketDispatcher:
 
         if not isinstance(call_id, UUID):
             raise AudioSocketDispatcherError("call_id must be a UUID.")
+
         port = validate_worker_port(worker_port)
 
         with self._lock:
@@ -110,10 +133,12 @@ class AudioSocketDispatcher:
                 raise AudioSocketDispatcherError(
                     f"AudioSocket UUID {call_id} is already registered."
                 )
+
             if len(self._routes) >= self.max_registered_sessions:
                 raise AudioSocketDispatcherError(
                     "AudioSocket dispatcher registration limit reached."
                 )
+
             if any(route.worker_port == port for route in self._routes.values()):
                 raise AudioSocketDispatcherError(
                     f"Worker port {port} is already registered."
@@ -121,15 +146,18 @@ class AudioSocketDispatcher:
 
             route = AudioSocketRoute(call_id=call_id, worker_port=port)
             self._routes[call_id] = route
+
             return route
 
     def unregister(self, call_id: UUID) -> None:
         """Remove an unconsumed route, for example after worker startup failure."""
+
         with self._lock:
             self._routes.pop(call_id, None)
 
     def start(self) -> None:
         """Bind the trusted endpoint and begin accepting concurrent sessions."""
+
         if self._accept_thread is not None:
             raise AudioSocketDispatcherError("AudioSocket dispatcher already started.")
 
@@ -156,11 +184,13 @@ class AudioSocketDispatcher:
 
     def close(self) -> None:
         """Stop accepting new sessions and close the dispatcher listener."""
+
         self._stop.set()
         self._ready.clear()
 
         server = self._server
         self._server = None
+
         if server is not None:
             try:
                 server.close()
@@ -169,6 +199,7 @@ class AudioSocketDispatcher:
 
         thread = self._accept_thread
         self._accept_thread = None
+
         if thread is not None:
             thread.join(timeout=2.0)
 
@@ -190,6 +221,7 @@ class AudioSocketDispatcher:
     def _accept_loop(self) -> None:
         while not self._stop.is_set():
             server = self._server
+
             if server is None:
                 return
 
@@ -208,8 +240,10 @@ class AudioSocketDispatcher:
                 name="voiceprobe-audiosocket-route",
                 daemon=True,
             )
+
             with self._lock:
                 self._session_threads.add(thread)
+
             thread.start()
 
     def _handle_session(self, downstream: socket.socket) -> None:
@@ -217,13 +251,20 @@ class AudioSocketDispatcher:
         upstream: socket.socket | None = None
 
         try:
+            # The original AudioSocket endpoint is unauthenticated but
+            # loopback-only. Bound the pre-UUID state so a local stale/invalid
+            # connection cannot retain an unlimited routing thread.
+            downstream.settimeout(self.uuid_handshake_timeout_seconds)
+
             header = recv_exact(downstream, 3)
+
             if header is None:
                 return
 
             message_type = header[0]
             payload_length = int.from_bytes(header[1:3], "big")
             payload = recv_exact(downstream, payload_length)
+
             if payload is None:
                 return
 
@@ -247,7 +288,7 @@ class AudioSocketDispatcher:
             downstream.settimeout(None)
 
             # Preserve the exact first AudioSocket frame for the existing
-            # worker.  Downstream v2/v3 UUID validation therefore stays intact.
+            # worker. Downstream v2/v3 UUID validation therefore stays intact.
             upstream.sendall(header + payload)
 
             left = threading.Thread(
@@ -275,6 +316,7 @@ class AudioSocketDispatcher:
                         connection.close()
                     except OSError:
                         pass
+
             with self._lock:
                 self._session_threads.discard(current)
 
@@ -283,8 +325,10 @@ class AudioSocketDispatcher:
         try:
             while True:
                 chunk = source.recv(65536)
+
                 if not chunk:
                     break
+
                 destination.sendall(chunk)
         except OSError:
             pass
