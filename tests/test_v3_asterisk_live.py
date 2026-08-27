@@ -1,11 +1,19 @@
 from __future__ import annotations
 
+import threading
+from contextlib import contextmanager
 from dataclasses import dataclass
+from types import SimpleNamespace
+from uuid import UUID
 
 import pytest
 
+from voiceprobe.media.live_asr import TYPE_HANGUP, TYPE_PCM_8KHZ, TYPE_UUID
+from voiceprobe.runner import AssessmentCallRequest
+from voiceprobe.telephony.ami import OriginateResult
 from voiceprobe.v3.asterisk_live import (
     _recording_context,
+    execute_v3_asterisk_media,
     project_v3_flow_snapshot,
     scenario_termination_failure_reason,
 )
@@ -82,6 +90,203 @@ def test_accepted_socket_closes_when_recorder_setup_fails(monkeypatch) -> None:
         pass
 
     assert connection.closed is True
+
+
+def test_uuid_starts_runtime_and_processes_pcm_before_originate_response(
+    monkeypatch,
+) -> None:
+    call_id = UUID("11111111-2222-4333-8444-555555555555")
+    release_originate = threading.Event()
+    pcm_submitted = threading.Event()
+    events: list[str] = []
+
+    class Pending:
+        def done(self) -> bool:
+            return release_originate.is_set()
+
+        def result(self) -> OriginateResult:
+            assert release_originate.wait(timeout=2.0)
+            return OriginateResult(
+                action_id="action-1",
+                audiosocket_call_id=call_id,
+                asterisk_unique_id="asterisk-123.456",
+                channel="Local/+12025550100@voiceprobe-test",
+                response="Success",
+                reason="4",
+            )
+
+        def cancel(self) -> None:
+            release_originate.set()
+
+    pending = Pending()
+
+    class Connection:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *args) -> None:
+            del args
+
+        def settimeout(self, timeout: float) -> None:
+            del timeout
+
+        def close(self) -> None:
+            events.append("connection_closed")
+
+    connection = Connection()
+
+    class Server:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *args) -> None:
+            del args
+
+        def setsockopt(self, *args) -> None:
+            del args
+
+        def bind(self, address) -> None:
+            del address
+
+        def listen(self, backlog: int) -> None:
+            del backlog
+
+        def settimeout(self, timeout: float) -> None:
+            del timeout
+
+        def accept(self):
+            return connection, ("127.0.0.1", 12345)
+
+    class Recorder:
+        run_id = "run-test"
+        elapsed_seconds = 0.1
+
+        def record_event(self, event: str, **details) -> None:
+            del details
+            events.append(event)
+
+        def finalize(self, **kwargs) -> None:
+            del kwargs
+
+    recorder = Recorder()
+
+    @contextmanager
+    def recording_context(*args, **kwargs):
+        del args, kwargs
+        yield recorder
+
+    class Monitor:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *args) -> None:
+            del args
+
+        def observe_inbound(self, pcm: bytes) -> None:
+            del pcm
+
+        def observe_outbound(self, pcm: bytes) -> None:
+            del pcm
+
+    class Boundary:
+        def __init__(self, **kwargs) -> None:
+            del kwargs
+
+        def start_idle_silence(self, *, stop) -> None:
+            del stop
+            events.append("idle_started")
+
+        def forward_inbound_pcm(self, pcm: bytes, *, submit_pcm) -> None:
+            submit_pcm(pcm)
+
+        def join_idle_silence(self, *, timeout: float) -> None:
+            del timeout
+
+    class Runtime:
+        def __init__(self, **kwargs) -> None:
+            del kwargs
+            self.objective_complete = threading.Event()
+            self.scenario_terminal = threading.Event()
+            self.error_event = threading.Event()
+            self.error = None
+
+        def start(self) -> None:
+            events.append("runtime_started")
+
+        def submit_pcm(self, pcm: bytes) -> None:
+            assert pcm == b"pcm"
+            events.append("pcm_submitted")
+            pcm_submitted.set()
+
+        def flush_and_snapshot(self):
+            return self.snapshot()
+
+        def snapshot(self):
+            return _snapshot(_ProjectionCase(False, None, None))
+
+        def scenario_metadata(self):
+            return {}
+
+        def record_persona_final_evidence(self) -> None:
+            pass
+
+        def stop(self) -> None:
+            events.append("runtime_stopped")
+
+    messages = iter(
+        [(TYPE_UUID, call_id.bytes), (TYPE_PCM_8KHZ, b"pcm"), (TYPE_HANGUP, b"")]
+    )
+    monkeypatch.setattr("voiceprobe.v3.asterisk_live.socket.socket", lambda *a, **k: Server())
+    monkeypatch.setattr("voiceprobe.v3.asterisk_live.LiveAudioMonitor.from_environment", lambda: Monitor())
+    monkeypatch.setattr("voiceprobe.v3.asterisk_live._recording_context", recording_context)
+    monkeypatch.setattr("voiceprobe.v3.asterisk_live._recv_message_polling", lambda *a, **k: next(messages))
+    monkeypatch.setattr("voiceprobe.v3.asterisk_live.KokoroTelephonyRenderer", lambda **kwargs: object())
+    monkeypatch.setattr("voiceprobe.v3.asterisk_live.AudioSocketKokoroSpeechTask", lambda **kwargs: object())
+    monkeypatch.setattr("voiceprobe.v3.asterisk_live.AudioSocketV3MediaBoundary", Boundary)
+    monkeypatch.setattr("voiceprobe.v3.asterisk_live._AsyncV3Runtime", Runtime)
+
+    outcome: list[object] = []
+
+    def execute() -> None:
+        outcome.append(
+            execute_v3_asterisk_media(
+                request=AssessmentCallRequest(
+                    execution_id="execution-test",
+                    position=1,
+                    scenario_id="autonomous-phone-diagnostic",
+                    originating_number="+12025550101",
+                    destination="+12025550100",
+                    max_duration_seconds=30,
+                ),
+                call_id=call_id,
+                start_originate=lambda: pending,
+                pipeline=object(),
+                voice="af_heart",
+                tts_pcm_cache=None,
+                deepgram_api_key="synthetic-key",
+                artifact_root="unused",
+                host="127.0.0.1",
+                port=0,
+                accept_timeout_seconds=1.0,
+                hangup_observer=None,
+                ami_error_type=RuntimeError,
+                classify_termination=lambda **kwargs: SimpleNamespace(value="remote_hangup"),
+                termination_failure_reason=lambda **kwargs: None,
+            )
+        )
+
+    worker = threading.Thread(target=execute)
+    worker.start()
+    assert pcm_submitted.wait(timeout=1.0)
+    assert release_originate.is_set() is False
+    assert events.index("idle_started") < events.index("runtime_started")
+    assert events.index("runtime_started") < events.index("pcm_submitted")
+
+    release_originate.set()
+    worker.join(timeout=2.0)
+    assert worker.is_alive() is False
+    assert len(outcome) == 1
+    assert outcome[0].originate.asterisk_unique_id == "asterisk-123.456"
 
 
 def test_projection_treats_v3_complete_as_authoritative_booking_confirmation() -> None:
