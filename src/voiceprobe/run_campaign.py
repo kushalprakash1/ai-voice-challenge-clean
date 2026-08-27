@@ -19,6 +19,7 @@ from voiceprobe.campaign_packs import (
     evaluation_pack_ids,
     get_evaluation_pack,
 )
+from voiceprobe.campaign_report import build_campaign_report
 from voiceprobe.campaign_subprocess import SubprocessCampaignCaseExecutor
 from voiceprobe.config import Settings
 from voiceprobe.execution_state import BudgetLedger, BudgetPolicy
@@ -193,12 +194,15 @@ def main() -> int:
         max_call_duration_seconds=args.max_call_duration_seconds,
     )
 
-    plan = build_campaign_plan(
-        policy,
-        cases=cases,
-        max_parallel_calls=args.parallel,
-        campaign_id=args.campaign_id or None,
-    )
+    try:
+        plan = build_campaign_plan(
+            policy,
+            cases=cases,
+            max_parallel_calls=args.parallel,
+            campaign_id=args.campaign_id or None,
+        )
+    except ValueError as error:
+        parser.error(str(error))
 
     try:
         total_budget = Decimal(args.budget_usd)
@@ -307,6 +311,13 @@ def main() -> int:
         },
     )
 
+    report = build_campaign_report(authorization.plan, result)
+    report_path = campaign_root / "report.json"
+    _write_json_atomic(
+        report_path,
+        asdict(report),
+    )
+
     print(
         json.dumps(
             {
@@ -314,11 +325,13 @@ def main() -> int:
                 "manifest_path": str(manifest_path),
                 "authorization_path": str(authorization_path),
                 "result_path": str(result_path),
+                "report_path": str(report_path),
                 "evaluation_pack_id": selected_pack_id,
                 "call_count": plan.call_count,
                 "parallel": plan.max_parallel_calls,
                 "completed_count": result.completed_count,
                 "failed_count": result.failed_count,
+                "failure_rate": report.failure_rate,
                 "campaign_worst_case_usd": str(campaign_worst_case),
             },
             indent=2,
