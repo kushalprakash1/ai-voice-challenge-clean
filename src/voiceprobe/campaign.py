@@ -155,6 +155,8 @@ class CampaignCaseResult:
     worker_connection_established: bool | None = None
     uuid_forwarded: bool | None = None
     selected_media_mode: str | None = None
+    pipecat_version: str | None = None
+    v3_runtime_dependencies_ready: bool | None = None
 
 
 @dataclass(frozen=True, slots=True)

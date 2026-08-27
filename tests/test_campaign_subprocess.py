@@ -146,6 +146,121 @@ def test_live_worker_contract_requires_deepgram_before_runtime_setup(
         run_campaign_case._validate_live_media_contract(selected_media_mode="v3")
 
 
+def test_live_worker_pipecat_failure_precedes_settings_and_telephony(
+    monkeypatch, tmp_path
+) -> None:
+    monkeypatch.chdir(tmp_path)
+    secret = "synthetic-deepgram-secret-that-must-not-be-evidence"
+    monkeypatch.setenv("VOICEPROBE_V3_LIVE", "1")
+    monkeypatch.setenv("DEEPGRAM_API_KEY", secret)
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "voiceprobe.run_campaign_case",
+            "--scenario",
+            "autonomous-phone-diagnostic",
+            "--campaign-id",
+            "pipecat-missing-campaign",
+            "--case-id",
+            "autonomous-phone-diagnostic-r01",
+            "--position",
+            "1",
+            "--execution-id",
+            "pipecat-missing-campaign-c001",
+            "--call-id",
+            "00000000-0000-0000-0000-000000000001",
+            "--worker-port",
+            "9200",
+            "--media-mode",
+            "v3",
+            "--live",
+        ],
+    )
+    settings_constructed = False
+
+    def fail_preflight():
+        raise RuntimeError(
+            "Production v3 dependency preflight failed: pipecat-ai is not installed."
+        )
+
+    def observe_settings():
+        nonlocal settings_constructed
+        settings_constructed = True
+        raise AssertionError("Settings must not be constructed")
+
+    monkeypatch.setattr(run_campaign_case, "preflight_v3_runtime_dependencies", fail_preflight)
+    monkeypatch.setattr(run_campaign_case, "Settings", observe_settings)
+
+    with pytest.raises(RuntimeError, match="pipecat-ai is not installed"):
+        run_campaign_case.main()
+
+    evidence_path = lifecycle_path(
+        campaign_id="pipecat-missing-campaign",
+        position=1,
+        case_id="autonomous-phone-diagnostic-r01",
+    )
+    evidence = json.loads(evidence_path.read_text())
+    assert settings_constructed is False
+    assert evidence["v3_runtime_dependencies_ready"] is False
+    assert evidence["pipecat_version"] is None
+    assert evidence["terminal"] is True
+    assert secret not in evidence_path.read_text()
+
+
+def test_non_live_worker_emits_terminal_result_without_telephony(
+    monkeypatch, tmp_path, capsys
+) -> None:
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setenv("VOICEPROBE_ORIGINATING_NUMBER", ORIGINATING_NUMBER)
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "voiceprobe.run_campaign_case",
+            "--scenario",
+            "autonomous-phone-diagnostic",
+            "--campaign-id",
+            "non-live-campaign",
+            "--case-id",
+            "autonomous-phone-diagnostic-r01",
+            "--position",
+            "1",
+            "--execution-id",
+            "non-live-campaign-c001",
+            "--call-id",
+            "00000000-0000-0000-0000-000000000001",
+            "--worker-port",
+            "9200",
+            "--media-mode",
+            "v3",
+        ],
+    )
+
+    def reject_telephony(*_args, **_kwargs):
+        raise AssertionError("non-live worker must not attempt telephony")
+
+    monkeypatch.setattr(
+        run_campaign_case, "AsteriskAssessmentCallAdapter", reject_telephony
+    )
+    monkeypatch.setattr(
+        run_campaign_case, "preflight_v3_runtime_dependencies", reject_telephony
+    )
+
+    assert run_campaign_case.main() == 0
+
+    result_line = next(
+        line
+        for line in capsys.readouterr().out.splitlines()
+        if line.startswith(run_campaign_case.CASE_RESULT_PREFIX)
+    )
+    payload = json.loads(result_line.removeprefix(run_campaign_case.CASE_RESULT_PREFIX))
+    assert payload["status"] == "completed"
+    assert payload["dry_run"] is True
+    assert payload["pipecat_version"] is None
+    assert payload["v3_runtime_dependencies_ready"] is False
+
+
 def test_subprocess_worker_command_preserves_original_live_boundary(
     tmp_path, monkeypatch
 ) -> None:
@@ -168,6 +283,8 @@ def test_subprocess_worker_command_preserves_original_live_boundary(
                 "call_id": call_id,
                 "worker_port": worker_port,
                 "selected_media_mode": "v3",
+                "pipecat_version": "1.7.0",
+                "v3_runtime_dependencies_ready": True,
             }
         )
         payload += "\n"
@@ -184,6 +301,8 @@ def test_subprocess_worker_command_preserves_original_live_boundary(
                     "call_uuid": call_id,
                     "worker_port": worker_port,
                     "selected_media_mode": "v3",
+                    "pipecat_version": "1.7.0",
+                    "v3_runtime_dependencies_ready": True,
                 }
             )
         )
@@ -227,6 +346,8 @@ def test_subprocess_worker_command_preserves_original_live_boundary(
     assert result.route_released is True
     assert result.subprocess_exit_code == 0
     assert result.timed_out is False
+    assert result.pipecat_version == "1.7.0"
+    assert result.v3_runtime_dependencies_ready is True
     assert secret not in "".join(
         path.read_text() for path in tmp_path.rglob("*.log")
     )
@@ -349,6 +470,8 @@ def test_subprocess_worker_collects_lightweight_process_evidence(tmp_path) -> No
                     ),
                     "worker_port": 9200,
                     "selected_media_mode": "v3",
+                    "pipecat_version": "1.7.0",
+                    "v3_runtime_dependencies_ready": True,
                     "cpu_user_seconds": 1.25,
                     "cpu_system_seconds": 0.5,
                     "max_rss": 204800,
@@ -360,7 +483,9 @@ def test_subprocess_worker_collects_lightweight_process_evidence(tmp_path) -> No
             '"execution_id":"campaign-subprocess-test-c001",'
             '"artifact_run_id":"artifact-1","call_id":"'
             + json.loads(lifecycle_path.read_text())["call_uuid"]
-            + '","worker_port":9200,"selected_media_mode":"v3"}\n'
+            + '","worker_port":9200,"selected_media_mode":"v3",'
+            '"pipecat_version":"1.7.0",'
+            '"v3_runtime_dependencies_ready":true}\n'
         )
         return FakeProcess(stdout=payload)
 
@@ -533,6 +658,8 @@ def test_malformed_child_result_is_contained(tmp_path, field, value) -> None:
             "call_id": command[command.index("--call-id") + 1],
             "worker_port": int(command[command.index("--worker-port") + 1]),
             "selected_media_mode": "v3",
+            "pipecat_version": "1.7.0",
+            "v3_runtime_dependencies_ready": True,
         }
         payload[field] = value
         return FakeProcess(
@@ -564,6 +691,9 @@ def test_malformed_child_result_is_contained(tmp_path, field, value) -> None:
         {"cpu_user_seconds": -1},
         {"cpu_system_seconds": "bad"},
         {"max_rss": -1},
+        {"pipecat_version": None},
+        {"pipecat_version": "1.7.1"},
+        {"v3_runtime_dependencies_ready": False},
     ),
 )
 def test_invalid_lifecycle_metrics_and_pid_are_contained(
@@ -590,6 +720,8 @@ def test_invalid_lifecycle_metrics_and_pid_are_contained(
             "call_uuid": call_id,
             "worker_port": port,
             "selected_media_mode": "v3",
+            "pipecat_version": "1.7.0",
+            "v3_runtime_dependencies_ready": True,
         }
         lifecycle.update(lifecycle_change)
         path.write_text(json.dumps(lifecycle))
@@ -602,6 +734,8 @@ def test_invalid_lifecycle_metrics_and_pid_are_contained(
                 "call_id": call_id,
                 "worker_port": port,
                 "selected_media_mode": "v3",
+                "pipecat_version": "1.7.0",
+                "v3_runtime_dependencies_ready": True,
             }
         )
         return process
@@ -642,6 +776,8 @@ def test_malformed_lifecycle_json_is_explicit_validation_failure(tmp_path) -> No
             "call_id": command[command.index("--call-id") + 1],
             "worker_port": int(command[command.index("--worker-port") + 1]),
             "selected_media_mode": "v3",
+            "pipecat_version": "1.7.0",
+            "v3_runtime_dependencies_ready": True,
         }
         return FakeProcess(
             stdout="VOICEPROBE_CAMPAIGN_CASE_RESULT=" + json.dumps(payload)

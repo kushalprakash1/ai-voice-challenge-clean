@@ -37,6 +37,7 @@ from voiceprobe.telephony.audiosocket_dispatcher import (
     AudioSocketDispatcher,
     validate_worker_port,
 )
+from voiceprobe.v3.runtime_dependencies import SUPPORTED_PIPECAT_VERSION
 
 DEFAULT_CAMPAIGN_WORKER_PORT_BASE = 9200
 WORKER_TEARDOWN_GRACE_SECONDS = 90
@@ -429,6 +430,12 @@ class SubprocessCampaignCaseExecutor:
             self._expect_equal(
                 payload, "selected_media_mode", CAMPAIGN_MEDIA_MODE_V3, errors
             )
+            self._expect_equal(
+                payload, "pipecat_version", SUPPORTED_PIPECAT_VERSION, errors
+            )
+            self._expect_equal(
+                payload, "v3_runtime_dependencies_ready", True, errors
+            )
 
         if lifecycle:
             self._expect_equal(lifecycle, "execution_id", execution_id, errors)
@@ -436,6 +443,12 @@ class SubprocessCampaignCaseExecutor:
             self._expect_equal(lifecycle, "worker_port", worker_port, errors)
             self._expect_equal(
                 lifecycle, "selected_media_mode", CAMPAIGN_MEDIA_MODE_V3, errors
+            )
+            self._expect_equal(
+                lifecycle, "pipecat_version", SUPPORTED_PIPECAT_VERSION, errors
+            )
+            self._expect_equal(
+                lifecycle, "v3_runtime_dependencies_ready", True, errors
             )
             lifecycle_pid = lifecycle.get("worker_pid")
             if (
@@ -494,6 +507,12 @@ class SubprocessCampaignCaseExecutor:
                 "max_rss_unit": str(lifecycle.get("max_rss_unit"))
                 if lifecycle.get("max_rss_unit")
                 else None,
+                "pipecat_version": str(lifecycle.get("pipecat_version"))
+                if lifecycle.get("pipecat_version")
+                else None,
+                "v3_runtime_dependencies_ready": (
+                    lifecycle.get("v3_runtime_dependencies_ready") is True
+                ),
             },
             errors,
         )

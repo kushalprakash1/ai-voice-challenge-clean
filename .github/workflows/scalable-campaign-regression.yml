@@ -12,11 +12,13 @@ on:
       - "src/voiceprobe/campaign_subprocess.py"
       - "src/voiceprobe/run_campaign.py"
       - "src/voiceprobe/run_campaign_case.py"
+      - "src/voiceprobe/v3/runtime_dependencies.py"
       - "src/voiceprobe/telephony/audiosocket_dispatcher.py"
       - "tests/test_campaign.py"
       - "tests/test_campaign_packs.py"
       - "tests/test_campaign_report.py"
       - "tests/test_campaign_subprocess.py"
+      - "tests/test_v3_runtime_dependencies.py"
       - "tests/test_audiosocket_dispatcher.py"
       - "tests/test_safety.py"
       - "tests/test_execution.py"
@@ -28,6 +30,8 @@ on:
       - "tests/test_run_one_budget.py"
       - "tests/test_run_one_live_policy.py"
       - ".github/workflows/scalable-campaign-regression.yml"
+      - "pyproject.toml"
+      - "uv.lock"
 
 concurrency:
   group: scalable-campaign-regression-${{ github.ref }}
@@ -58,6 +62,19 @@ jobs:
       - name: Install locked dependencies
         run: uv sync --frozen --group dev
 
+      - name: Smoke test installed production v3 runtime
+        run: >-
+          uv run python -c
+          'import importlib.metadata as m;
+          assert m.version("pipecat-ai") == "1.7.0";
+          assert m.version("deepgram-sdk") == "7.7.0";
+          import pipecat.frames.frames;
+          import pipecat.pipeline.pipeline;
+          import pipecat.pipeline.worker;
+          import pipecat.processors.frame_processor;
+          import pipecat.services.deepgram.flux.stt;
+          import pipecat.workers.runner'
+
       - name: Lint campaign implementation
         run: >-
           uv run ruff check
@@ -67,11 +84,13 @@ jobs:
           src/voiceprobe/campaign_subprocess.py
           src/voiceprobe/run_campaign.py
           src/voiceprobe/run_campaign_case.py
+          src/voiceprobe/v3/runtime_dependencies.py
           src/voiceprobe/telephony/audiosocket_dispatcher.py
           tests/test_campaign.py
           tests/test_campaign_packs.py
           tests/test_campaign_report.py
           tests/test_campaign_subprocess.py
+          tests/test_v3_runtime_dependencies.py
           tests/test_audiosocket_dispatcher.py
 
       - name: Static security scan of campaign boundary
@@ -83,6 +102,7 @@ jobs:
           src/voiceprobe/campaign_subprocess.py
           src/voiceprobe/run_campaign.py
           src/voiceprobe/run_campaign_case.py
+          src/voiceprobe/v3/runtime_dependencies.py
           src/voiceprobe/telephony/audiosocket_dispatcher.py
 
       - name: Run campaign and original safety regressions
@@ -92,6 +112,7 @@ jobs:
           tests/test_campaign_packs.py
           tests/test_campaign_report.py
           tests/test_campaign_subprocess.py
+          tests/test_v3_runtime_dependencies.py
           tests/test_audiosocket_dispatcher.py
           tests/test_safety.py
           tests/test_execution.py

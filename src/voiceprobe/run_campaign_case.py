@@ -57,6 +57,10 @@ from voiceprobe.telephony.asterisk_adapter import (
     v3_live_enabled_from_environment,
 )
 from voiceprobe.telephony.audiosocket_dispatcher import validate_worker_port
+from voiceprobe.v3.runtime_dependencies import (
+    V3RuntimeDependencyStatus,
+    preflight_v3_runtime_dependencies,
+)
 
 CASE_RESULT_PREFIX = "VOICEPROBE_CAMPAIGN_CASE_RESULT="
 
@@ -91,7 +95,9 @@ def _finalize_lifecycle(path: Path, payload: dict[str, object]) -> str | None:
     return None
 
 
-def _validate_live_media_contract(*, selected_media_mode: str) -> None:
+def _validate_live_media_contract(
+    *, selected_media_mode: str
+) -> V3RuntimeDependencyStatus:
     """Fail before settings, AMI construction, or any telephony side effect."""
 
     if selected_media_mode != CAMPAIGN_MEDIA_MODE_V3:
@@ -104,6 +110,7 @@ def _validate_live_media_contract(*, selected_media_mode: str) -> None:
         raise RuntimeError(
             "Live scalable campaign requires DEEPGRAM_API_KEY before dialing."
         )
+    return preflight_v3_runtime_dependencies()
 
 
 def main() -> int:
@@ -175,6 +182,8 @@ def main() -> int:
         "artifact_run_id": None,
         "terminal": False,
         "selected_media_mode": args.media_mode,
+        "pipecat_version": None,
+        "v3_runtime_dependencies_ready": False,
     }
     try:
         initialize_lifecycle(worker_lifecycle_path, lifecycle)
@@ -188,9 +197,30 @@ def main() -> int:
     os.environ["VOICEPROBE_SCENARIO"] = args.scenario
     os.environ["VOICEPROBE_LIVE_MONITOR"] = "0"
 
+    dependency_status: V3RuntimeDependencyStatus | None = None
     try:
         if args.live:
-            _validate_live_media_contract(selected_media_mode=args.media_mode)
+            dependency_status = _validate_live_media_contract(
+                selected_media_mode=args.media_mode
+            )
+            lifecycle.update(
+                {
+                    "pipecat_version": dependency_status.pipecat_version,
+                    "v3_runtime_dependencies_ready": dependency_status.ready,
+                }
+            )
+            update_lifecycle(worker_lifecycle_path, lifecycle)
+            print(
+                "VOICEPROBE_V3_RUNTIME_DEPENDENCY_PREFLIGHT="
+                + json.dumps(
+                    {
+                        "event": "v3_runtime_dependency_preflight",
+                        "pipecat_version": dependency_status.pipecat_version,
+                        "status": "passed",
+                    },
+                    sort_keys=True,
+                )
+            )
 
         settings = Settings()  # type: ignore[call-arg]
         base_policy = settings.call_policy()
@@ -227,6 +257,8 @@ def main() -> int:
                         "status": "completed",
                         "artifact_run_id": None,
                         "selected_media_mode": args.media_mode,
+                        "pipecat_version": None,
+                        "v3_runtime_dependencies_ready": False,
                     }
                 )
             )
@@ -315,6 +347,12 @@ def main() -> int:
         "error": entry.error,
         "entry": asdict(entry),
         "selected_media_mode": args.media_mode,
+        "pipecat_version": (
+            dependency_status.pipecat_version if dependency_status else None
+        ),
+        "v3_runtime_dependencies_ready": (
+            dependency_status.ready if dependency_status else False
+        ),
     }
     print(_result_line(payload))
 
