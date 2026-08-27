@@ -28,7 +28,8 @@ MAX_CAMPAIGN_PARALLELISM = 8
 MAX_CAMPAIGN_CALLS = 64
 MAX_REPETITIONS_PER_CASE = 16
 MAX_EVALUATION_FOCUS_CHARS = 500
-CAMPAIGN_CONFIRMATION_TOKEN = "AUTHORIZE_ASSESSMENT_CAMPAIGN"
+# This is a public confirmation phrase, not a password, credential, or secret.
+CAMPAIGN_CONFIRMATION_TOKEN = "AUTHORIZE_ASSESSMENT_CAMPAIGN"  # nosec B105
 _CAMPAIGN_ID_PATTERN = re.compile(r"^[a-z0-9][a-z0-9_-]{2,63}$")
 
 
@@ -249,8 +250,7 @@ def build_campaign_plan(
             f"{MAX_CAMPAIGN_CALLS}."
         )
 
-    if parallelism > len(expanded):
-        parallelism = len(expanded)
+    parallelism = min(parallelism, len(expanded))
 
     resolved_campaign_id = _validate_campaign_id(
         campaign_id or f"campaign-{uuid4().hex[:12]}"
@@ -332,7 +332,9 @@ def _execute_one(
 
     try:
         result = executor.execute_case(request)
-    except BaseException as error:
+    # This boundary deliberately converts every ordinary worker failure into
+    # terminal evidence while allowing BaseException control flow to escape.
+    except Exception as error:  # noqa: BLE001
         return CampaignCaseResult(
             position=request.position,
             case_id=request.case_id,
@@ -392,7 +394,9 @@ def run_campaign(
 
             try:
                 result = future.result()
-            except BaseException as error:
+            # Preserve completed campaign evidence for any ordinary failure
+            # escaping the per-worker normalization boundary.
+            except Exception as error:  # noqa: BLE001
                 case = plan.cases[position - 1]
                 result = CampaignCaseResult(
                     position=position,

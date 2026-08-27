@@ -32,8 +32,14 @@ def policy(*, dry_run: bool = True) -> CallPolicy:
 
 
 class ConcurrentFakeExecutor:
-    def __init__(self, *, fail_positions: set[int] | None = None) -> None:
+    def __init__(
+        self,
+        *,
+        fail_positions: set[int] | None = None,
+        failure_type: type[Exception] = RuntimeError,
+    ) -> None:
         self.fail_positions = set() if fail_positions is None else set(fail_positions)
+        self.failure_type = failure_type
         self.lock = threading.Lock()
         self.active = 0
         self.max_active = 0
@@ -53,7 +59,7 @@ class ConcurrentFakeExecutor:
             time.sleep(0.03)
 
             if request.position in self.fail_positions:
-                raise RuntimeError("synthetic campaign worker failure")
+                raise self.failure_type("synthetic campaign worker failure")
 
             return CampaignCaseResult(
                 position=request.position,
@@ -227,6 +233,44 @@ def test_campaign_worker_failure_is_isolated_and_not_retried() -> None:
     assert result.entries[1].status is CampaignCaseStatus.FAILED
     assert "synthetic campaign worker failure" in (result.entries[1].error or "")
     assert result.entries[2].status is CampaignCaseStatus.COMPLETED
+
+
+def test_campaign_normalizes_type_error_without_retrying_or_reordering() -> None:
+    plan = build_campaign_plan(
+        policy(),
+        cases=(
+            CampaignCaseSpec("autonomous-phone-diagnostic", repetitions=4),
+        ),
+        max_parallel_calls=2,
+    )
+    executor = ConcurrentFakeExecutor(
+        fail_positions={2},
+        failure_type=TypeError,
+    )
+
+    result = run_campaign(plan, executor)
+
+    assert tuple(entry.position for entry in result.entries) == (1, 2, 3, 4)
+    assert result.completed_count == 3
+    assert result.failed_count == 1
+    assert result.entries[1].status is CampaignCaseStatus.FAILED
+    assert result.entries[1].error == "TypeError: synthetic campaign worker failure"
+    assert executor.attempts == {1: 1, 2: 1, 3: 1, 4: 1}
+
+
+def test_campaign_allows_keyboard_interrupt_to_propagate() -> None:
+    plan = build_campaign_plan(
+        policy(),
+        cases=(CampaignCaseSpec("autonomous-phone-diagnostic"),),
+    )
+
+    class InterruptedExecutor:
+        def execute_case(self, request: CampaignCaseRequest) -> CampaignCaseResult:
+            del request
+            raise KeyboardInterrupt
+
+    with pytest.raises(KeyboardInterrupt):
+        run_campaign(plan, InterruptedExecutor())
 
 
 def test_campaign_results_are_returned_in_manifest_order() -> None:

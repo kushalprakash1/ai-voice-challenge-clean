@@ -22,8 +22,11 @@ from voiceprobe.campaign_packs import (
 from voiceprobe.campaign_report import build_campaign_report
 from voiceprobe.campaign_subprocess import SubprocessCampaignCaseExecutor
 from voiceprobe.config import Settings
-from voiceprobe.execution_state import BudgetLedger, BudgetPolicy
-from voiceprobe.policy import DEFAULT_MAX_CALL_DURATION_SECONDS, MAX_CALL_DURATION_SECONDS
+from voiceprobe.execution_state import BudgetLedger, BudgetPolicy, BudgetStateError
+from voiceprobe.policy import (
+    DEFAULT_MAX_CALL_DURATION_SECONDS,
+    MAX_CALL_DURATION_SECONDS,
+)
 from voiceprobe.run_one import DEFAULT_MAX_PROVIDER_RATE_PER_MINUTE_USD
 from voiceprobe.safety import require_live_destination
 from voiceprobe.scenarios.catalog import list_scenarios
@@ -211,7 +214,7 @@ def main() -> int:
             total_budget_usd=total_budget,
             max_provider_rate_per_minute_usd=max_rate,
         )
-    except Exception as error:
+    except (ArithmeticError, BudgetStateError) as error:
         parser.error(f"Invalid campaign budget configuration: {error}")
 
     budget_probe = BudgetLedger(budget_policy)
@@ -285,7 +288,8 @@ def main() -> int:
             "campaign_id": plan.campaign_id,
             "authorized": True,
             "authorization_boundary": "campaign",
-            "confirmation_token_persisted": False,
+            # Records that no token is persisted; this value contains no secret.
+            "confirmation_token_persisted": False,  # nosec B105
         },
     )
 

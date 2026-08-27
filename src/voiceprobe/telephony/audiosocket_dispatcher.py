@@ -14,6 +14,7 @@ from __future__ import annotations
 import socket
 import threading
 from dataclasses import dataclass
+from typing import Self
 from uuid import UUID
 
 from voiceprobe.media.live_asr import TYPE_UUID, recv_exact
@@ -210,7 +211,7 @@ class AudioSocketDispatcher:
         for session_thread in session_threads:
             session_thread.join(timeout=2.0)
 
-    def __enter__(self) -> AudioSocketDispatcher:
+    def __enter__(self) -> Self:
         self.start()
         return self
 
@@ -227,7 +228,7 @@ class AudioSocketDispatcher:
 
             try:
                 connection, _ = server.accept()
-            except socket.timeout:
+            except TimeoutError:
                 continue
             except OSError:
                 if self._stop.is_set():

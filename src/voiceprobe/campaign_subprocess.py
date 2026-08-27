@@ -8,7 +8,9 @@ Flux sessions, TTS state, and failures from leaking between concurrent calls.
 from __future__ import annotations
 
 import json
-import subprocess
+
+# Subprocess provides process isolation; execution uses list-form argv, never a shell.
+import subprocess  # nosec B404
 import sys
 from collections.abc import Callable
 from pathlib import Path
