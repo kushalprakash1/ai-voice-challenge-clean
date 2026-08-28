@@ -20,10 +20,10 @@ import socket
 import threading
 import time
 from collections.abc import Callable, Mapping
-from contextlib import contextmanager
+from contextlib import closing, contextmanager
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
+from typing import Any, Protocol
 from uuid import UUID
 
 from voiceprobe.artifacts.recorder import RunArtifactRecorder
@@ -75,6 +75,37 @@ SOCKET_POLL_SECONDS = 0.10
 RUNNER_SHUTDOWN_TIMEOUT_SECONDS = 10.0
 
 
+class _PendingOriginate(Protocol):
+    """One owned asynchronous AMI originate operation."""
+
+    def result(self) -> OriginateResult: ...
+
+    def done(self) -> bool: ...
+
+    def cancel(self) -> None: ...
+
+
+@contextmanager
+def _pending_originate_lifecycle(
+    pending: _PendingOriginate,
+) -> Any:
+    """Ensure media/setup failures cannot leak the originate worker."""
+    try:
+        yield pending
+    except BaseException as primary_error:
+        try:
+            pending.cancel()
+        except Exception as cleanup_error:  # noqa: BLE001 - preserve primary
+            # Preserve the primary media/setup failure. The adapter performs
+            # its own final close and best-effort hangup where correlation is
+            # available.
+            primary_error.add_note(
+                "Pending originate cleanup also failed: "
+                f"{type(cleanup_error).__name__}: {cleanup_error}"
+            )
+        raise
+
+
 class _FluxReadinessGate:
     """One-shot, level-triggered pre-dial readiness for the live pipeline."""
 
@@ -82,6 +113,7 @@ class _FluxReadinessGate:
         self.ready = threading.Event()
         self.pipeline_started = threading.Event()
         self.flux_connected = threading.Event()
+        self.failed = threading.Event()
         self._lock = threading.Lock()
         self._ready_observations = 0
 
@@ -98,11 +130,17 @@ class _FluxReadinessGate:
         self.flux_connected.set()
         return self._refresh()
 
+    def mark_failed(self) -> None:
+        """Make terminal startup failure immune to late connection signals."""
+        with self._lock:
+            self.failed.set()
+
     def _refresh(self) -> bool:
         with self._lock:
             if (
                 self.pipeline_started.is_set()
                 and self.flux_connected.is_set()
+                and not self.failed.is_set()
                 and not self.ready.is_set()
             ):
                 self._ready_observations += 1
@@ -155,7 +193,7 @@ class V3AsteriskMediaResult:
 
 @contextmanager
 def _recording_context(
-    connection: socket.socket,
+    connection: socket.socket | None,
     *,
     root: Path,
     scenario: Any,
@@ -165,7 +203,8 @@ def _recording_context(
         with RunArtifactRecorder(root=root, scenario=scenario) as recorder:
             yield recorder
     except BaseException:
-        connection.close()
+        if connection is not None:
+            connection.close()
         raise
 
 
@@ -523,10 +562,19 @@ class _AsyncV3Runtime:
                 )
 
             if time.monotonic() >= deadline:
+                self._readiness.mark_failed()
                 self.request_stop()
-                raise CallExecutionError(
+                timeout_error = CallExecutionError(
                     "VoiceProbe v3 timed out waiting for Deepgram Flux to connect."
                 )
+                try:
+                    self.stop()
+                except BaseException as cleanup_error:  # noqa: BLE001 - preserve timeout
+                    timeout_error.add_note(
+                        "WorkerRunner timeout cleanup also failed: "
+                        f"{type(cleanup_error).__name__}: {cleanup_error}"
+                    )
+                raise timeout_error
 
             time.sleep(0.01)
 
@@ -549,7 +597,7 @@ class _AsyncV3Runtime:
         def capture_submission_error(done) -> None:
             try:
                 done.result()
-            except BaseException as error:  # includes event-loop cancellation failures
+            except BaseException as error:  # noqa: BLE001 - event-loop cancellation
                 if self._stop_requested.is_set():
                     return
                 self._set_error(error)
@@ -637,7 +685,7 @@ class _AsyncV3Runtime:
     def _thread_main(self) -> None:
         try:
             asyncio.run(self._async_main())
-        except BaseException as error:
+        except BaseException as error:  # noqa: BLE001 - async thread boundary
             # Any exception escaping _async_main is infrastructure failure;
             # normal requested shutdown returns without raising.
             if not isinstance(error, asyncio.CancelledError):
@@ -753,7 +801,7 @@ class _AsyncV3Runtime:
                     runner_task,
                     timeout=RUNNER_SHUTDOWN_TIMEOUT_SECONDS,
                 )
-            except asyncio.TimeoutError:
+            except TimeoutError:
                 runner_task.cancel()
                 try:
                     await runner_task
@@ -828,7 +876,7 @@ def _recv_exact_polling(
 
         try:
             chunk = connection.recv(size - len(data))
-        except socket.timeout:
+        except TimeoutError:
             continue
         except OSError:
             if should_stop():
@@ -921,7 +969,7 @@ def execute_v3_asterisk_media(
     *,
     request: AssessmentCallRequest,
     call_id: UUID,
-    originate: Callable[[], OriginateResult],
+    start_originate: Callable[[], _PendingOriginate] | None,
     pipeline: Any,
     voice: str,
     tts_pcm_cache: Mapping[str, bytes] | None,
@@ -934,6 +982,7 @@ def execute_v3_asterisk_media(
     ami_error_type: type[BaseException],
     classify_termination: Callable[..., Any],
     termination_failure_reason: Callable[..., str | None],
+    flux_connect_timeout_seconds: float = DEFAULT_FLUX_CONNECT_TIMEOUT_SECONDS,
 ) -> V3AsteriskMediaResult:
     """Run exactly one v3 live-media call after all adapter safety checks."""
 
@@ -981,6 +1030,11 @@ def execute_v3_asterisk_media(
     with (
         LiveAudioMonitor.from_environment() as live_monitor,
         socket.socket(socket.AF_INET, socket.SOCK_STREAM) as server,
+        _recording_context(
+            None,
+            root=artifact_root,
+            scenario=scenario,
+        ) as recorder,
     ):
         server.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
         server.bind((host, port))
@@ -988,27 +1042,33 @@ def execute_v3_asterisk_media(
         server.settimeout(accept_timeout_seconds)
 
         # Preserve the adapter's critical safety ordering: listener first.
-        originate_result = originate()
+        # Production supplies an owned worker whose thread remains the sole
+        # AMI reader until OriginateResponse has been consumed.
+        if start_originate is None:
+            raise CallExecutionError(
+                "V3 Asterisk media requires an asynchronous originate owner."
+            )
+        recorder.record_event("media_runtime_selected", media_mode="v3")
+        pending_originate = start_originate()
 
         try:
             connection, address = server.accept()
         except TimeoutError as error:
+            pending_originate.cancel()
             raise CallExecutionError(
                 "Asterisk originated the call but did not connect "
                 "to the local AudioSocket listener in time."
             ) from error
 
-        with _recording_context(
-            connection,
-            root=artifact_root,
-            scenario=scenario,
-        ) as recorder:
+        with (
+            _pending_originate_lifecycle(pending_originate),
+            closing(connection),
+        ):
             recorder.record_event(
                 "suite_adapter_call_started",
                 execution_id=request.execution_id,
                 position=request.position,
                 call_id=str(call_id),
-                asterisk_unique_id=originate_result.asterisk_unique_id,
                 address=address,
                 reasoning_mode="v3_live",
                 accent_mode=accent_mode,
@@ -1028,6 +1088,7 @@ def execute_v3_asterisk_media(
             live_runtime: _AsyncV3Runtime | None = None
             observed_call_id: UUID | None = None
             completion_requested = False
+            originate_result: OriginateResult | None = None
 
             def enforce_max_duration() -> None:
                 expired = not call_finished.wait(request.max_duration_seconds)
@@ -1061,6 +1122,10 @@ def execute_v3_asterisk_media(
                         return (
                             max_duration_reached.is_set()
                             or (
+                                originate_result is None
+                                and pending_originate.done()
+                            )
+                            or (
                                 live_runtime is not None
                                 and (
                                     live_runtime.objective_complete.is_set()
@@ -1071,6 +1136,15 @@ def execute_v3_asterisk_media(
                         )
 
                     while True:
+                        if originate_result is None and pending_originate.done():
+                            try:
+                                originate_result = pending_originate.result()
+                            except Exception as error:
+                                raise CallExecutionError(
+                                    "AMI originate failed while AudioSocket media "
+                                    f"was active: {type(error).__name__}: {error}"
+                                ) from error
+
                         if max_duration_reached.is_set():
                             break
 
@@ -1208,7 +1282,15 @@ def execute_v3_asterisk_media(
                                 recorder=recorder,
                                 persona_runtime=persona_runtime,
                             )
-                            live_runtime.start()
+                            if (
+                                flux_connect_timeout_seconds
+                                == DEFAULT_FLUX_CONNECT_TIMEOUT_SECONDS
+                            ):
+                                live_runtime.start()
+                            else:
+                                live_runtime.start(
+                                    timeout=flux_connect_timeout_seconds
+                                )
                             recorder.record_event("v3_live_media_started")
                             continue
 
@@ -1245,7 +1327,7 @@ def execute_v3_asterisk_media(
                     try:
                         # Final deterministic drain before the event loop closes.
                         live_runtime.flush_and_snapshot()
-                    except BaseException as error:
+                    except BaseException as error:  # noqa: BLE001 - final evidence
                         recorder.record_event(
                             "v3_final_flush_error",
                             error_type=type(error).__name__,
@@ -1254,7 +1336,7 @@ def execute_v3_asterisk_media(
 
                     try:
                         live_runtime.record_persona_final_evidence()
-                    except BaseException as error:
+                    except BaseException as error:  # noqa: BLE001 - final evidence
                         recorder.record_event(
                             "persona_final_evidence_error",
                             error_type=type(error).__name__,
@@ -1283,6 +1365,22 @@ def execute_v3_asterisk_media(
                 raise CallExecutionError(
                     "VoiceProbe v3 runtime never started after the AudioSocket UUID."
                 )
+
+            if originate_result is None:
+                try:
+                    originate_result = pending_originate.result()
+                except Exception as error:
+                    raise CallExecutionError(
+                        "AMI originate failed while AudioSocket media was active: "
+                        f"{type(error).__name__}: {error}"
+                    ) from error
+
+            recorder.record_event(
+                "ami_originate_completed",
+                action_id=originate_result.action_id,
+                asterisk_unique_id=originate_result.asterisk_unique_id,
+                channel=originate_result.channel,
+            )
 
             final_snapshot = live_runtime.snapshot()
             scenario_metadata = live_runtime.scenario_metadata()

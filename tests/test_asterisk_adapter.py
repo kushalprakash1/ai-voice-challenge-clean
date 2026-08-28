@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import threading
 from collections.abc import Callable
 from uuid import UUID
 
@@ -15,11 +16,13 @@ from voiceprobe.safety import (
 )
 from voiceprobe.telephony.ami import (
     AsteriskAMIConfig,
+    AsteriskHangupResult,
     OriginateResult,
 )
 from voiceprobe.telephony.asterisk_adapter import (
     AsteriskAssessmentCallAdapter,
     AsteriskMediaOutcome,
+    _MonitoredOriginate,
 )
 
 CALLER = "+12025550101"
@@ -89,6 +92,219 @@ class FakeAMIClient:
         assert unique_id == "asterisk-123.456"
         assert channel.startswith("Local/")
         self.events.append("ami_hangup")
+
+
+def test_pending_originate_allows_media_readiness_before_response() -> None:
+    events: list[str] = []
+    entered = threading.Event()
+    release = threading.Event()
+
+    class DelayedAMIClient(FakeAMIClient):
+        def originate_audiosocket(self, *args, **kwargs) -> OriginateResult:
+            events.append("ami_originate_entered")
+            entered.set()
+            assert release.wait(timeout=2.0)
+            return super().originate_audiosocket(*args, **kwargs)
+
+    originate = _MonitoredOriginate(
+        ami_config=AsteriskAMIConfig(
+            username="voiceprobe",
+            secret="synthetic-test-secret",
+        ),
+        ami_client_factory=lambda config: DelayedAMIClient(events),
+        destination=ALLOWED_TEST_NUMBER,
+        call_id=CALL_ID,
+    )
+
+    pending = originate.start()
+    assert entered.wait(timeout=1.0)
+    events.append("audiosocket_accepted")
+    events.append("uuid_validated")
+    events.append("idle_silence_started")
+    assert pending.done() is False
+
+    release.set()
+    result = pending.result()
+    originate.close()
+
+    assert result.audiosocket_call_id == CALL_ID
+    assert events.index("idle_silence_started") < events.index("ami_originate")
+    assert events.count("ami_originate") == 1
+
+
+def test_pending_originate_propagates_failure_after_media_appears() -> None:
+    events: list[str] = []
+    release = threading.Event()
+
+    class FailingAMIClient(FakeAMIClient):
+        def originate_audiosocket(self, *args, **kwargs) -> OriginateResult:
+            del args, kwargs
+            events.append("ami_originate")
+            assert release.wait(timeout=2.0)
+            raise RuntimeError("synthetic OriginateResponse failure")
+
+    originate = _MonitoredOriginate(
+        ami_config=AsteriskAMIConfig(
+            username="voiceprobe",
+            secret="synthetic-test-secret",
+        ),
+        ami_client_factory=lambda config: FailingAMIClient(events),
+        destination=ALLOWED_TEST_NUMBER,
+        call_id=CALL_ID,
+    )
+    pending = originate.start()
+    events.append("audiosocket_accepted")
+    release.set()
+
+    with pytest.raises(RuntimeError, match="OriginateResponse failure"):
+        pending.result()
+
+    originate.close()
+    assert events.count("ami_originate") == 1
+
+
+def test_pending_originate_cancel_closes_ami_and_joins_worker() -> None:
+    events: list[str] = []
+    entered = threading.Event()
+    closed = threading.Event()
+
+    class CancellableAMIClient(FakeAMIClient):
+        def originate_audiosocket(self, *args, **kwargs) -> OriginateResult:
+            del args, kwargs
+            events.append("ami_originate")
+            entered.set()
+            assert closed.wait(timeout=2.0)
+            raise RuntimeError("AMI transport closed")
+
+        def close(self) -> None:
+            super().close()
+            closed.set()
+
+    originate = _MonitoredOriginate(
+        ami_config=AsteriskAMIConfig(
+            username="voiceprobe",
+            secret="synthetic-test-secret",
+        ),
+        ami_client_factory=lambda config: CancellableAMIClient(events),
+        destination=ALLOWED_TEST_NUMBER,
+        call_id=CALL_ID,
+    )
+    pending = originate.start()
+    assert entered.wait(timeout=1.0)
+    pending.cancel()
+
+    assert pending.done() is True
+    assert events.count("ami_originate") == 1
+    assert events.count("ami_close") == 1
+
+
+def test_cancel_race_retains_successful_correlation_for_hangup() -> None:
+    events: list[str] = []
+    result_ready = threading.Event()
+    publish_result = threading.Event()
+    original_closed = threading.Event()
+    clients: list[FakeAMIClient] = []
+
+    class RacingAMIClient(FakeAMIClient):
+        def originate_audiosocket(self, *args, **kwargs) -> OriginateResult:
+            result = super().originate_audiosocket(*args, **kwargs)
+            result_ready.set()
+            assert publish_result.wait(timeout=2.0)
+            return result
+
+        def close(self) -> None:
+            super().close()
+            original_closed.set()
+
+    def client_factory(config: AsteriskAMIConfig) -> FakeAMIClient:
+        del config
+        client = RacingAMIClient(events)
+        clients.append(client)
+        return client
+
+    originate = _MonitoredOriginate(
+        ami_config=AsteriskAMIConfig(
+            username="voiceprobe",
+            secret="synthetic-test-secret",
+        ),
+        ami_client_factory=client_factory,
+        destination=ALLOWED_TEST_NUMBER,
+        call_id=CALL_ID,
+    )
+    pending = originate.start()
+    assert result_ready.wait(timeout=1.0)
+
+    cleanup = threading.Thread(target=pending.cancel)
+    cleanup.start()
+    assert original_closed.wait(timeout=1.0)
+    publish_result.set()
+    cleanup.join(timeout=2.0)
+    assert cleanup.is_alive() is False
+
+    result = pending.result()
+    originate.hangup_best_effort()
+    originate.close()
+
+    assert result.asterisk_unique_id == "asterisk-123.456"
+    assert result.channel.startswith("Local/")
+    assert events.count("ami_originate") == 1
+    assert events.count("ami_hangup") == 1
+    assert len(clients) == 2
+    assert events.count("ami_close") == 2
+
+
+def test_hangup_read_starts_only_after_pending_originate_reader_finishes() -> None:
+    events: list[str] = []
+    originate_reading = threading.Event()
+    release = threading.Event()
+
+    class SerializedAMIClient(FakeAMIClient):
+        def originate_audiosocket(self, *args, **kwargs) -> OriginateResult:
+            originate_reading.set()
+            assert release.wait(timeout=2.0)
+            result = super().originate_audiosocket(*args, **kwargs)
+            originate_reading.clear()
+            return result
+
+        def wait_for_hangup(
+            self, *, unique_id: str, channel: str, max_events: int = 2000
+        ) -> AsteriskHangupResult:
+            del max_events
+            assert originate_reading.is_set() is False
+            events.append("ami_wait_for_hangup")
+            return AsteriskHangupResult(
+                unique_id=unique_id,
+                channel=channel,
+                linked_id=unique_id,
+                cause="16",
+                cause_text="Normal Clearing",
+                tech_cause=None,
+            )
+
+    originate = _MonitoredOriginate(
+        ami_config=AsteriskAMIConfig(
+            username="voiceprobe",
+            secret="synthetic-test-secret",
+        ),
+        ami_client_factory=lambda config: SerializedAMIClient(events),
+        destination=ALLOWED_TEST_NUMBER,
+        call_id=CALL_ID,
+    )
+    pending = originate.start()
+    assert originate_reading.wait(timeout=1.0)
+
+    with pytest.raises(CallExecutionError, match="only once"):
+        originate.start()
+
+    release.set()
+    result = pending.result()
+    hangup = originate.wait_for_hangup()
+    originate.close()
+
+    assert result.action_id == "action-1"
+    assert result.asterisk_unique_id == "asterisk-123.456"
+    assert hangup.unique_id == result.asterisk_unique_id
+    assert events.count("ami_originate") == 1
 
 
 def build_adapter(

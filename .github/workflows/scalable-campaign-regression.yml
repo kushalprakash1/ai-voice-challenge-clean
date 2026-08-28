@@ -1,0 +1,134 @@
+name: Scalable Campaign Regression
+
+on:
+  push:
+    branches:
+      - feature/scalable-evaluation-campaigns
+  pull_request:
+    paths:
+      - "src/voiceprobe/campaign.py"
+      - "src/voiceprobe/campaign_packs.py"
+      - "src/voiceprobe/campaign_report.py"
+      - "src/voiceprobe/campaign_subprocess.py"
+      - "src/voiceprobe/run_campaign.py"
+      - "src/voiceprobe/run_campaign_case.py"
+      - "src/voiceprobe/v3/runtime_dependencies.py"
+      - "src/voiceprobe/telephony/audiosocket_dispatcher.py"
+      - "tests/test_campaign.py"
+      - "tests/test_campaign_packs.py"
+      - "tests/test_campaign_report.py"
+      - "tests/test_campaign_subprocess.py"
+      - "tests/test_v3_runtime_dependencies.py"
+      - "tests/test_audiosocket_dispatcher.py"
+      - "tests/test_safety.py"
+      - "tests/test_execution.py"
+      - "tests/test_execution_state.py"
+      - "tests/test_runner.py"
+      - "tests/test_ami.py"
+      - "tests/test_ami_originate.py"
+      - "tests/test_asterisk_adapter.py"
+      - "tests/test_run_one_budget.py"
+      - "tests/test_run_one_live_policy.py"
+      - ".github/workflows/scalable-campaign-regression.yml"
+      - "pyproject.toml"
+      - "uv.lock"
+
+concurrency:
+  group: scalable-campaign-regression-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  campaign-regression:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v6
+        with:
+          enable-cache: true
+
+      - name: Install locked dependencies
+        run: uv sync --frozen --group dev
+
+      - name: Smoke test installed production v3 runtime
+        run: >-
+          uv run python -c
+          'import importlib.metadata as m;
+          assert m.version("pipecat-ai") == "1.7.0";
+          assert m.version("deepgram-sdk") == "7.7.0";
+          import pipecat.frames.frames;
+          import pipecat.pipeline.pipeline;
+          import pipecat.pipeline.worker;
+          import pipecat.processors.frame_processor;
+          import pipecat.services.deepgram.flux.stt;
+          import pipecat.workers.runner'
+
+      - name: Lint campaign implementation
+        run: >-
+          uv run ruff check
+          src/voiceprobe/campaign.py
+          src/voiceprobe/campaign_packs.py
+          src/voiceprobe/campaign_report.py
+          src/voiceprobe/campaign_subprocess.py
+          src/voiceprobe/run_campaign.py
+          src/voiceprobe/run_campaign_case.py
+          src/voiceprobe/v3/runtime_dependencies.py
+          src/voiceprobe/telephony/audiosocket_dispatcher.py
+          tests/test_campaign.py
+          tests/test_campaign_packs.py
+          tests/test_campaign_report.py
+          tests/test_campaign_subprocess.py
+          tests/test_v3_runtime_dependencies.py
+          tests/test_audiosocket_dispatcher.py
+
+      - name: Static security scan of campaign boundary
+        run: >-
+          uv run bandit -q
+          src/voiceprobe/campaign.py
+          src/voiceprobe/campaign_packs.py
+          src/voiceprobe/campaign_report.py
+          src/voiceprobe/campaign_subprocess.py
+          src/voiceprobe/run_campaign.py
+          src/voiceprobe/run_campaign_case.py
+          src/voiceprobe/v3/runtime_dependencies.py
+          src/voiceprobe/telephony/audiosocket_dispatcher.py
+
+      - name: Run campaign and original safety regressions
+        run: >-
+          uv run pytest -q
+          tests/test_campaign.py
+          tests/test_campaign_packs.py
+          tests/test_campaign_report.py
+          tests/test_campaign_subprocess.py
+          tests/test_v3_runtime_dependencies.py
+          tests/test_audiosocket_dispatcher.py
+          tests/test_safety.py
+          tests/test_execution.py
+          tests/test_execution_state.py
+          tests/test_runner.py
+          tests/test_ami.py
+          tests/test_ami_originate.py
+          tests/test_asterisk_adapter.py
+          tests/test_run_one_budget.py
+          tests/test_run_one_live_policy.py
+
+      - name: Exercise production-smoke campaign dry-run CLI
+        env:
+          VOICEPROBE_ORIGINATING_NUMBER: "+12025550101"
+        run: >-
+          uv run python -m voiceprobe.run_campaign
+          --pack production-smoke
+          --parallel 3
+          --campaign-id ci-production-smoke

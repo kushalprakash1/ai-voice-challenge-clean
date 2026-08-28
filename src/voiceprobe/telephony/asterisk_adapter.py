@@ -14,6 +14,7 @@ import os
 import socket
 import threading
 from collections.abc import Callable
+from contextlib import suppress
 from dataclasses import dataclass
 from enum import StrEnum
 from pathlib import Path
@@ -81,6 +82,7 @@ def v3_live_enabled_from_environment() -> bool:
 
 DEFAULT_ACCEPT_TIMEOUT_SECONDS = 10.0
 DEFAULT_ORIGINATE_TIMEOUT_MS = 30_000
+DEFAULT_FLUX_CONNECT_TIMEOUT_SECONDS = 10.0
 
 
 class AsteriskTerminationStatus(StrEnum):
@@ -228,6 +230,59 @@ class _MediaExecutor(Protocol):
         ...
 
 
+class _PendingOriginate:
+    """Owned one-shot worker for a blocking AMI originate operation."""
+
+    def __init__(
+        self,
+        originate: Callable[[], OriginateResult],
+        *,
+        cancel: Callable[[], None],
+    ) -> None:
+        self._originate = originate
+        self._cancel = cancel
+        self._finished = threading.Event()
+        self._result: OriginateResult | None = None
+        self._error: BaseException | None = None
+        self._thread = threading.Thread(
+            target=self._run,
+            name="voiceprobe-ami-originate",
+            daemon=False,
+        )
+        self._thread.start()
+
+    def _run(self) -> None:
+        try:
+            self._result = self._originate()
+        except Exception as error:  # noqa: BLE001 - propagate across thread boundary
+            self._error = error
+        finally:
+            self._finished.set()
+
+    def result(self) -> OriginateResult:
+        """Join the sole AMI reader and return or re-raise its result."""
+        self._finished.wait()
+        self._thread.join()
+        if self._error is not None:
+            raise self._error
+        if self._result is None:
+            raise CallExecutionError("AMI originate completed without a result.")
+        return self._result
+
+    def done(self) -> bool:
+        """Return whether the AMI response wait has completed."""
+        return self._finished.is_set()
+
+    def cancel(self) -> None:
+        """Interrupt a pending AMI wait and join its owned worker."""
+        try:
+            if not self._finished.is_set():
+                self._cancel()
+        finally:
+            self._finished.wait()
+            self._thread.join()
+
+
 _AMIClientFactory = Callable[[AsteriskAMIConfig], _AMIClient]
 _CallIDFactory = Callable[[], UUID]
 
@@ -251,18 +306,38 @@ class _MonitoredOriginate:
         self._result: OriginateResult | None = None
         self._invoked = False
         self._hangup_requested = False
+        self._pending: _PendingOriginate | None = None
+        self._state_lock = threading.Lock()
+        self._close_requested = False
+
+    def start(self) -> _PendingOriginate:
+        """Start exactly one originate without blocking the media listener."""
+        with self._state_lock:
+            if self._pending is not None or self._invoked:
+                raise CallExecutionError(
+                    "Assessment originate callback may be invoked only once."
+                )
+            pending = _PendingOriginate(self, cancel=self.close)
+            self._pending = pending
+            return pending
 
     def __call__(self) -> OriginateResult:
         """Originate once while retaining the authenticated AMI connection."""
-        if self._invoked:
-            raise CallExecutionError(
-                "Assessment originate callback may be invoked only once."
-            )
-
-        self._invoked = True
+        with self._state_lock:
+            if self._invoked:
+                raise CallExecutionError(
+                    "Assessment originate callback may be invoked only once."
+                )
+            self._invoked = True
 
         client = self._ami_client_factory(self._ami_config)
-        self._client = client
+        with self._state_lock:
+            if self._close_requested:
+                client.close()
+                raise CallExecutionError(
+                    "AMI originate was cancelled before connection setup."
+                )
+            self._client = client
 
         try:
             client.connect()
@@ -277,7 +352,8 @@ class _MonitoredOriginate:
             self.close()
             raise
 
-        self._result = result
+        with self._state_lock:
+            self._result = result
 
         return result
 
@@ -300,30 +376,42 @@ class _MonitoredOriginate:
 
     def close(self) -> None:
         """Close retained AMI without requesting a channel hangup."""
-        client = self._client
-        self._client = None
+        with self._state_lock:
+            self._close_requested = True
+            client = self._client
+            self._client = None
 
         if client is not None:
             client.close()
 
     def hangup_best_effort(self) -> None:
         """Request hangup once, preserving any original media failure."""
-        if self._hangup_requested:
-            return
-        self._hangup_requested = True
+        with self._state_lock:
+            if self._hangup_requested:
+                return
+            self._hangup_requested = True
+            client = self._client
+            result = self._result
 
-        client = self._client
-        result = self._result
-        if client is None or result is None:
+        if result is None:
             return
 
+        replacement_client = client is None
         try:
+            if client is None:
+                client = self._ami_client_factory(self._ami_config)
+                client.connect()
+                client.login(events="off")
             client.hangup(
                 unique_id=result.asterisk_unique_id,
                 channel=result.channel,
             )
-        except Exception:
+        except Exception:  # noqa: BLE001 - best-effort cleanup
             return
+        finally:
+            if replacement_client and client is not None:
+                with suppress(Exception):
+                    client.close()
 
 
 def _default_ami_client_factory(
@@ -351,6 +439,7 @@ class AsteriskAssessmentCallAdapter:
         ollama_url: str = DEFAULT_OLLAMA_URL,
         voice: str = DEFAULT_VOICE,
         accept_timeout_seconds: float = DEFAULT_ACCEPT_TIMEOUT_SECONDS,
+        flux_connect_timeout_seconds: float = DEFAULT_FLUX_CONNECT_TIMEOUT_SECONDS,
         ami_client_factory: _AMIClientFactory = _default_ami_client_factory,
         call_id_factory: _CallIDFactory = uuid4,
         media_executor: _MediaExecutor | None = None,
@@ -383,6 +472,13 @@ class AsteriskAssessmentCallAdapter:
         ):
             raise ValueError("AudioSocket accept timeout must be greater than zero.")
 
+        if (
+            isinstance(flux_connect_timeout_seconds, bool)
+            or not isinstance(flux_connect_timeout_seconds, (int, float))
+            or flux_connect_timeout_seconds <= 0
+        ):
+            raise ValueError("Flux connect timeout must be greater than zero.")
+
         self._ami_config = ami_config
         self._expected_originating_number = expected_originating_number
         self._artifact_root = Path(artifact_root)
@@ -392,6 +488,7 @@ class AsteriskAssessmentCallAdapter:
         self._ollama_url = ollama_url
         self._voice = voice
         self._accept_timeout_seconds = float(accept_timeout_seconds)
+        self._flux_connect_timeout_seconds = float(flux_connect_timeout_seconds)
         self._ami_client_factory = ami_client_factory
         self._call_id_factory = call_id_factory
 
@@ -538,7 +635,11 @@ class AsteriskAssessmentCallAdapter:
         result = execute_v3_asterisk_media(
             request=request,
             call_id=call_id,
-            originate=originate,
+            start_originate=(
+                originate.start
+                if isinstance(originate, _MonitoredOriginate)
+                else None
+            ),
             pipeline=pipeline,
             voice=self._voice,
             tts_pcm_cache=self._tts_pcm_cache,
@@ -547,6 +648,7 @@ class AsteriskAssessmentCallAdapter:
             host=self._host,
             port=self._port,
             accept_timeout_seconds=self._accept_timeout_seconds,
+            flux_connect_timeout_seconds=self._flux_connect_timeout_seconds,
             hangup_observer=hangup_observer,
             ami_error_type=AMIClientError,
             classify_termination=_classify_termination,

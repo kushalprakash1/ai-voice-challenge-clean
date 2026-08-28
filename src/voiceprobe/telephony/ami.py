@@ -551,7 +551,9 @@ class AsteriskAMIClient:
         ):
             raise TypeError("AudioSocket call_id must be a UUID.")
 
-        channel = f"Local/{destination}@{VOICEPROBE_DIALPLAN_CONTEXT}"
+        # Keep the Local leg in the bridge so AudioSocket remains attached after
+        # answer; Asterisk's /n modifier disables Local-channel optimization.
+        channel = f"Local/{destination}@{VOICEPROBE_DIALPLAN_CONTEXT}/n"
 
         data = f"{resolved_call_id},{VOICEPROBE_AUDIOSOCKET_TARGET}"
 

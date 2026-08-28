@@ -1,0 +1,112 @@
+from __future__ import annotations
+
+from voiceprobe.campaign import build_campaign_plan
+from voiceprobe.campaign_packs import (
+    evaluation_pack_ids,
+    get_evaluation_pack,
+    list_evaluation_packs,
+)
+from voiceprobe.policy import CallPolicy
+from voiceprobe.scenarios.catalog import get_scenario, list_scenarios
+from voiceprobe.v3.production import resolve_runtime_owner
+
+ORIGINATING_NUMBER = "+12025550101"
+
+
+def test_curated_pack_ids_are_unique_and_stable() -> None:
+    packs = list_evaluation_packs()
+
+    assert len(packs) == len({pack.pack_id for pack in packs})
+    assert evaluation_pack_ids() == tuple(pack.pack_id for pack in packs)
+    assert "booking-integrity" in evaluation_pack_ids()
+    assert "state-retention" in evaluation_pack_ids()
+    assert "production-smoke" in evaluation_pack_ids()
+    assert "gold-six" in evaluation_pack_ids()
+
+
+def test_gold_six_is_exact_preserved_submission_benchmark() -> None:
+    pack = get_evaluation_pack("gold-six")
+
+    assert len(pack.cases) == len(pack.gold_cases) == 6
+    assert tuple(case.call_number for case in pack.gold_cases) == tuple(range(1, 7))
+    assert tuple(case.case_key for case in pack.gold_cases) == (
+        "gold-01-doctor-directory",
+        "gold-02-farthest-date-scheduling",
+        "gold-03-office-information",
+        "gold-04-medication-workflow",
+        "gold-05-escalation-handoff",
+        "gold-06-booking-completion",
+    )
+    assert tuple(case.scenario_id for case in pack.gold_cases) == (
+        "doctor-specialist-directory",
+        "farthest-date-scheduling",
+        "office-hours-location-insurance",
+        "medication-refill-correction",
+        "medication-refill-correction",
+        "booking-confirmation-robustness",
+    )
+    assert pack.gold_cases[0].run_id is None
+    assert all(
+        case.transcript_path.endswith("transcript.txt") for case in pack.gold_cases
+    )
+
+
+def test_gold_six_has_unique_case_ids_and_preserves_shared_runtime() -> None:
+    pack = get_evaluation_pack("gold-six")
+    plan = build_campaign_plan(
+        CallPolicy(originating_number=ORIGINATING_NUMBER, dry_run=True),
+        cases=pack.cases,
+        max_parallel_calls=6,
+        campaign_id="gold-six-identity-test",
+    )
+
+    assert len({case.case_id for case in plan.cases}) == 6
+    fourth, fifth = plan.cases[3:5]
+    assert fourth.case_id != fifth.case_id
+    assert fourth.scenario_id == fifth.scenario_id == "medication-refill-correction"
+    assert resolve_runtime_owner(fourth.scenario_id) == resolve_runtime_owner(
+        fifth.scenario_id
+    )
+    assert fourth.evaluation_focus != fifth.evaluation_focus
+    assert all(
+        case.expected_runtime_owner == resolve_runtime_owner(case.scenario_id)
+        for case in pack.gold_cases
+    )
+
+
+def test_every_curated_pack_case_resolves_existing_scenario() -> None:
+    for pack in list_evaluation_packs():
+        assert pack.cases
+        for case in pack.cases:
+            scenario = get_scenario(case.scenario_id)
+            assert scenario.scenario_id == case.scenario_id
+            assert case.evaluation_focus
+
+
+def test_full_regression_pack_tracks_entire_scenario_catalog() -> None:
+    pack = get_evaluation_pack("full-regression")
+
+    assert tuple(case.scenario_id for case in pack.cases) == tuple(
+        scenario.scenario_id for scenario in list_scenarios()
+    )
+
+
+def test_pack_cases_build_through_normal_campaign_validation() -> None:
+    policy = CallPolicy(
+        originating_number=ORIGINATING_NUMBER,
+        dry_run=True,
+    )
+    pack = get_evaluation_pack("booking-integrity")
+
+    plan = build_campaign_plan(
+        policy,
+        cases=pack.cases,
+        max_parallel_calls=2,
+        campaign_id="campaign-pack-test",
+    )
+
+    assert plan.call_count == len(pack.cases)
+    assert plan.max_parallel_calls == 2
+    assert tuple(case.scenario_id for case in plan.cases) == tuple(
+        case.scenario_id for case in pack.cases
+    )

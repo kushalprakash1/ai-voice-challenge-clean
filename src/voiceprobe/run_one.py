@@ -9,14 +9,18 @@ from __future__ import annotations
 import argparse
 import json
 import os
-from dataclasses import asdict, replace
+from collections.abc import Callable
+from dataclasses import asdict, dataclass, replace
 from decimal import Decimal
 from pathlib import Path
+from uuid import UUID
 
 from dotenv import dotenv_values
 
+from voiceprobe.autonomous_phone import DEFAULT_VOICE
 from voiceprobe.config import Settings
 from voiceprobe.execution import (
+    ExecutionManifest,
     authorize_live_execution,
     prepare_execution,
     write_execution_manifest,
@@ -30,12 +34,15 @@ from voiceprobe.policy import (
     DEFAULT_MAX_CALL_DURATION_SECONDS,
     MAX_CALL_DURATION_SECONDS,
 )
-from voiceprobe.runner import run_persistent_authorized_suite
+from voiceprobe.runner import SuiteRunResult, run_persistent_authorized_suite
 from voiceprobe.safety import require_live_destination
 from voiceprobe.scenarios.catalog import get_scenario, list_scenarios
+from voiceprobe.scenarios.models import PatientScenario
 from voiceprobe.suite import build_suite_plan
 from voiceprobe.telephony.ami import AsteriskAMIConfig
 from voiceprobe.telephony.asterisk_adapter import AsteriskAssessmentCallAdapter
+from voiceprobe.v3.accent import accent_mode_from_environment
+from voiceprobe.v3.background import background_mode_from_environment
 from voiceprobe.v3.personas import (
     ENV_PERSONA,
     ENV_PERSONA_SEED,
@@ -43,9 +50,93 @@ from voiceprobe.v3.personas import (
     list_personas,
     sequence_ids_for,
 )
+from voiceprobe.v3.production import (
+    DEFAULT_PRODUCTION_FLUX_CONFIG,
+    resolve_runtime_owner,
+)
+from voiceprobe.v3.turn_stabilizer import DEFAULT_CONTINUATION_GRACE_MS
 
 DEFAULT_AMI_ENV = Path.home() / ".config/voiceprobe/ami.env"
 DEFAULT_MAX_PROVIDER_RATE_PER_MINUTE_USD = Decimal("0.10")
+
+
+@dataclass(frozen=True, slots=True)
+class PreparedOneCall:
+    """Behavior-owned input and immutable manifest for exactly one call."""
+
+    scenario: PatientScenario
+    manifest: ExecutionManifest
+
+
+@dataclass(frozen=True, slots=True)
+class OneCallTransportOverrides:
+    """Transport-only substitutions allowed for an isolated campaign child."""
+
+    ami_config: AsteriskAMIConfig
+    port: int | None = None
+    call_id_factory: Callable[[], UUID] | None = None
+    flux_connect_timeout_seconds: float | None = None
+
+
+@dataclass(frozen=True, slots=True)
+class OneCallExecutionResult:
+    """Shared one-call execution output for CLI and campaign wrappers."""
+
+    prepared: PreparedOneCall
+    manifest_path: Path
+    suite_result: SuiteRunResult | None
+
+
+@dataclass(frozen=True, slots=True)
+class OneCallBehaviorContract:
+    """Read-only fingerprint of behavior configuration owned below the CLI."""
+
+    scenario_id: str
+    patient_facts: dict[str, object]
+    objective: str
+    runtime_owner: str
+    reasoning_mode: str
+    semantic_features: tuple[tuple[str, str], ...]
+    flux_config: dict[str, object]
+    generic_coalescer_grace_ms: float
+    continuation_grace_ms: float
+    tts_backend: str
+    tts_voice: str
+    accent_mode: str
+    background_mode: str
+
+
+def describe_one_call_behavior(prepared: PreparedOneCall) -> OneCallBehaviorContract:
+    """Describe configuration without constructing or changing patient behavior."""
+
+    flux = asdict(DEFAULT_PRODUCTION_FLUX_CONFIG)
+    semantic_keys = (
+        "VOICEPROBE_V32_SEMANTIC",
+        "VOICEPROBE_V3_QWEN_FALLBACK",
+        "VOICEPROBE_V32_MODEL",
+        "VOICEPROBE_V32_OLLAMA_ENDPOINT",
+    )
+    accent_mode = accent_mode_from_environment()
+    return OneCallBehaviorContract(
+        scenario_id=prepared.scenario.scenario_id,
+        patient_facts=prepared.scenario.facts.model_dump(),
+        objective=prepared.scenario.objective,
+        runtime_owner=resolve_runtime_owner(prepared.scenario.scenario_id),
+        reasoning_mode=(
+            "v3_live"
+            if os.getenv("VOICEPROBE_V3_LIVE", "").strip().casefold()
+            in {"1", "true", "on", "yes"}
+            else "legacy"
+        ),
+        semantic_features=tuple((key, os.getenv(key, "")) for key in semantic_keys),
+        flux_config=flux,
+        generic_coalescer_grace_ms=DEFAULT_CONTINUATION_GRACE_MS,
+        continuation_grace_ms=float(flux["continuation_grace_ms"]),
+        tts_backend="kokoro" if accent_mode == "none" else "accent_cache",
+        tts_voice=DEFAULT_VOICE,
+        accent_mode=accent_mode,
+        background_mode=background_mode_from_environment(),
+    )
 
 
 def _required_env_value(
@@ -82,13 +173,14 @@ def load_ami_config(
     )
 
 
-def prepare_one_call(
+def prepare_one_call_contract(
     *,
     settings: Settings,
     scenario_id: str,
     live_requested: bool = False,
     max_call_duration_seconds: int | None = None,
-):
+    execution_id: str | None = None,
+) -> PreparedOneCall:
     """Create a fresh execution manifest containing exactly one scenario.
 
     The CLI's explicit --live request controls whether the prepared manifest
@@ -123,12 +215,102 @@ def prepare_one_call(
     manifest = prepare_execution(
         policy,
         suite,
+        execution_id=execution_id,
     )
 
     if manifest.scenario_ids != (scenario_id,):
         raise RuntimeError("One-call execution manifest contains unexpected scenarios.")
 
-    return manifest
+    return PreparedOneCall(scenario=scenario, manifest=manifest)
+
+
+def prepare_one_call(
+    *,
+    settings: Settings,
+    scenario_id: str,
+    live_requested: bool = False,
+    max_call_duration_seconds: int | None = None,
+):
+    """Backward-compatible manifest view of the shared preparation boundary."""
+
+    return prepare_one_call_contract(
+        settings=settings,
+        scenario_id=scenario_id,
+        live_requested=live_requested,
+        max_call_duration_seconds=max_call_duration_seconds,
+    ).manifest
+
+
+def execute_one_call(
+    prepared: PreparedOneCall,
+    *,
+    live_requested: bool,
+    confirmation_token: str,
+    budget_usd: Decimal,
+    max_rate_per_minute_usd: Decimal,
+    transport: OneCallTransportOverrides | None = None,
+) -> OneCallExecutionResult:
+    """Execute the sole production one-call contract.
+
+    Campaign callers may replace transport identity and isolation details, but
+    scenario, policy, suite construction, authorization, ledgers, adapter
+    assembly, and runner invocation remain owned here.
+    """
+
+    manifest = prepared.manifest
+    manifest_path = write_execution_manifest(manifest)
+    execution_dir = manifest_path.parent
+
+    if not live_requested:
+        return OneCallExecutionResult(prepared, manifest_path, None)
+
+    require_live_destination()
+    authorization = authorize_live_execution(
+        manifest,
+        live_requested=True,
+        confirmation_token=confirmation_token,
+    )
+    budget_policy = BudgetPolicy(
+        total_budget_usd=budget_usd,
+        max_provider_rate_per_minute_usd=max_rate_per_minute_usd,
+    )
+    call_ledger = PersistentCallLedger.initialize(
+        authorization,
+        path=execution_dir / "calls.json",
+    )
+    budget_ledger = PersistentBudgetLedger.initialize(
+        execution_id=manifest.execution_id,
+        policy=budget_policy,
+        path=execution_dir / "budget.json",
+    )
+    resolved_transport = transport or OneCallTransportOverrides(
+        ami_config=load_ami_config()
+    )
+    adapter_kwargs: dict[str, object] = {
+        "ami_config": resolved_transport.ami_config,
+        "expected_originating_number": manifest.originating_number,
+    }
+    if resolved_transport.port is not None:
+        adapter_kwargs["port"] = resolved_transport.port
+    if resolved_transport.call_id_factory is not None:
+        adapter_kwargs["call_id_factory"] = resolved_transport.call_id_factory
+    if resolved_transport.flux_connect_timeout_seconds is not None:
+        adapter_kwargs["flux_connect_timeout_seconds"] = (
+            resolved_transport.flux_connect_timeout_seconds
+        )
+    adapter = AsteriskAssessmentCallAdapter(**adapter_kwargs)
+
+    try:
+        result = run_persistent_authorized_suite(
+            authorization,
+            adapter,
+            call_ledger=call_ledger,
+            budget_ledger=budget_ledger,
+        )
+    finally:
+        adapter.close()
+
+    return OneCallExecutionResult(prepared, manifest_path, result)
 
 
 def _execution_exit_code(failed_count: int) -> int:
@@ -163,7 +345,6 @@ def main() -> int:
             "it never enters the call-critical media path."
         ),
     )
-
 
     parser.add_argument(
         "--persona",
@@ -235,10 +416,7 @@ def main() -> int:
     if args.persona:
         available_sequences = sequence_ids_for(args.persona)
 
-        if (
-            args.persona_sequence
-            and args.persona_sequence not in available_sequences
-        ):
+        if args.persona_sequence and args.persona_sequence not in available_sequences:
             parser.error(
                 f"invalid --persona-sequence for {args.persona!r}; "
                 f"choices are: {', '.join(available_sequences)}"
@@ -252,25 +430,27 @@ def main() -> int:
     # Keep monitoring explicitly opt-in for run_one. The actual media layer
     # reads this flag independently so the known-good adapter call signatures
     # and safety/budget plumbing remain unchanged.
-    os.environ["VOICEPROBE_LIVE_MONITOR"] = (
-        "1" if args.live_monitor else "0"
-    )
+    os.environ["VOICEPROBE_LIVE_MONITOR"] = "1" if args.live_monitor else "0"
     os.environ["VOICEPROBE_SCENARIO"] = args.scenario
 
     settings = Settings()  # type: ignore[call-arg]
 
-    manifest = prepare_one_call(
+    prepared = prepare_one_call_contract(
         settings=settings,
         scenario_id=args.scenario,
         live_requested=args.live,
-        max_call_duration_seconds=(
-            args.max_call_duration_seconds
-        ),
+        max_call_duration_seconds=(args.max_call_duration_seconds),
     )
 
-    # Persist evidence of exactly what is about to cross the live boundary.
-    manifest_path = write_execution_manifest(manifest)
-    execution_dir = manifest_path.parent
+    execution = execute_one_call(
+        prepared,
+        live_requested=args.live,
+        confirmation_token=args.confirm,
+        budget_usd=Decimal(args.budget_usd),
+        max_rate_per_minute_usd=Decimal(args.max_rate_per_minute_usd),
+    )
+    manifest = prepared.manifest
+    manifest_path = execution.manifest_path
 
     if not args.live:
         print(
@@ -289,46 +469,9 @@ def main() -> int:
         )
         return 0
 
-    require_live_destination()
-
-    authorization = authorize_live_execution(
-        manifest,
-        live_requested=args.live,
-        confirmation_token=args.confirm,
-    )
-
-    budget_policy = BudgetPolicy(
-        total_budget_usd=Decimal(args.budget_usd),
-        max_provider_rate_per_minute_usd=Decimal(args.max_rate_per_minute_usd),
-    )
-
-    call_ledger = PersistentCallLedger.initialize(
-        authorization,
-        path=execution_dir / "calls.json",
-    )
-
-    budget_ledger = PersistentBudgetLedger.initialize(
-        execution_id=manifest.execution_id,
-        policy=budget_policy,
-        path=execution_dir / "budget.json",
-    )
-
-    ami_config = load_ami_config()
-
-    adapter = AsteriskAssessmentCallAdapter(
-        ami_config=ami_config,
-        expected_originating_number=manifest.originating_number,
-    )
-
-    try:
-        result = run_persistent_authorized_suite(
-            authorization,
-            adapter,
-            call_ledger=call_ledger,
-            budget_ledger=budget_ledger,
-        )
-    finally:
-        adapter.close()
+    result = execution.suite_result
+    if result is None:
+        raise RuntimeError("Live one-call execution returned no suite result.")
 
     print(
         json.dumps(
