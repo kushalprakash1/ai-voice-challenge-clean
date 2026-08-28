@@ -75,6 +75,7 @@ class OneCallTransportOverrides:
     ami_config: AsteriskAMIConfig
     port: int | None = None
     call_id_factory: Callable[[], UUID] | None = None
+    flux_connect_timeout_seconds: float | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -293,6 +294,10 @@ def execute_one_call(
         adapter_kwargs["port"] = resolved_transport.port
     if resolved_transport.call_id_factory is not None:
         adapter_kwargs["call_id_factory"] = resolved_transport.call_id_factory
+    if resolved_transport.flux_connect_timeout_seconds is not None:
+        adapter_kwargs["flux_connect_timeout_seconds"] = (
+            resolved_transport.flux_connect_timeout_seconds
+        )
     adapter = AsteriskAssessmentCallAdapter(**adapter_kwargs)
 
     try:

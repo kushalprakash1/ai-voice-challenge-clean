@@ -82,6 +82,7 @@ def v3_live_enabled_from_environment() -> bool:
 
 DEFAULT_ACCEPT_TIMEOUT_SECONDS = 10.0
 DEFAULT_ORIGINATE_TIMEOUT_MS = 30_000
+DEFAULT_FLUX_CONNECT_TIMEOUT_SECONDS = 10.0
 
 
 class AsteriskTerminationStatus(StrEnum):
@@ -438,6 +439,7 @@ class AsteriskAssessmentCallAdapter:
         ollama_url: str = DEFAULT_OLLAMA_URL,
         voice: str = DEFAULT_VOICE,
         accept_timeout_seconds: float = DEFAULT_ACCEPT_TIMEOUT_SECONDS,
+        flux_connect_timeout_seconds: float = DEFAULT_FLUX_CONNECT_TIMEOUT_SECONDS,
         ami_client_factory: _AMIClientFactory = _default_ami_client_factory,
         call_id_factory: _CallIDFactory = uuid4,
         media_executor: _MediaExecutor | None = None,
@@ -470,6 +472,13 @@ class AsteriskAssessmentCallAdapter:
         ):
             raise ValueError("AudioSocket accept timeout must be greater than zero.")
 
+        if (
+            isinstance(flux_connect_timeout_seconds, bool)
+            or not isinstance(flux_connect_timeout_seconds, (int, float))
+            or flux_connect_timeout_seconds <= 0
+        ):
+            raise ValueError("Flux connect timeout must be greater than zero.")
+
         self._ami_config = ami_config
         self._expected_originating_number = expected_originating_number
         self._artifact_root = Path(artifact_root)
@@ -479,6 +488,7 @@ class AsteriskAssessmentCallAdapter:
         self._ollama_url = ollama_url
         self._voice = voice
         self._accept_timeout_seconds = float(accept_timeout_seconds)
+        self._flux_connect_timeout_seconds = float(flux_connect_timeout_seconds)
         self._ami_client_factory = ami_client_factory
         self._call_id_factory = call_id_factory
 
@@ -638,6 +648,7 @@ class AsteriskAssessmentCallAdapter:
             host=self._host,
             port=self._port,
             accept_timeout_seconds=self._accept_timeout_seconds,
+            flux_connect_timeout_seconds=self._flux_connect_timeout_seconds,
             hangup_observer=hangup_observer,
             ami_error_type=AMIClientError,
             classify_termination=_classify_termination,

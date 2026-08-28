@@ -113,6 +113,7 @@ class _FluxReadinessGate:
         self.ready = threading.Event()
         self.pipeline_started = threading.Event()
         self.flux_connected = threading.Event()
+        self.failed = threading.Event()
         self._lock = threading.Lock()
         self._ready_observations = 0
 
@@ -129,11 +130,17 @@ class _FluxReadinessGate:
         self.flux_connected.set()
         return self._refresh()
 
+    def mark_failed(self) -> None:
+        """Make terminal startup failure immune to late connection signals."""
+        with self._lock:
+            self.failed.set()
+
     def _refresh(self) -> bool:
         with self._lock:
             if (
                 self.pipeline_started.is_set()
                 and self.flux_connected.is_set()
+                and not self.failed.is_set()
                 and not self.ready.is_set()
             ):
                 self._ready_observations += 1
@@ -555,10 +562,19 @@ class _AsyncV3Runtime:
                 )
 
             if time.monotonic() >= deadline:
+                self._readiness.mark_failed()
                 self.request_stop()
-                raise CallExecutionError(
+                timeout_error = CallExecutionError(
                     "VoiceProbe v3 timed out waiting for Deepgram Flux to connect."
                 )
+                try:
+                    self.stop()
+                except BaseException as cleanup_error:  # noqa: BLE001 - preserve timeout
+                    timeout_error.add_note(
+                        "WorkerRunner timeout cleanup also failed: "
+                        f"{type(cleanup_error).__name__}: {cleanup_error}"
+                    )
+                raise timeout_error
 
             time.sleep(0.01)
 
@@ -966,6 +982,7 @@ def execute_v3_asterisk_media(
     ami_error_type: type[BaseException],
     classify_termination: Callable[..., Any],
     termination_failure_reason: Callable[..., str | None],
+    flux_connect_timeout_seconds: float = DEFAULT_FLUX_CONNECT_TIMEOUT_SECONDS,
 ) -> V3AsteriskMediaResult:
     """Run exactly one v3 live-media call after all adapter safety checks."""
 
@@ -1265,7 +1282,15 @@ def execute_v3_asterisk_media(
                                 recorder=recorder,
                                 persona_runtime=persona_runtime,
                             )
-                            live_runtime.start()
+                            if (
+                                flux_connect_timeout_seconds
+                                == DEFAULT_FLUX_CONNECT_TIMEOUT_SECONDS
+                            ):
+                                live_runtime.start()
+                            else:
+                                live_runtime.start(
+                                    timeout=flux_connect_timeout_seconds
+                                )
                             recorder.record_event("v3_live_media_started")
                             continue
 

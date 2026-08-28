@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import replace
+from uuid import uuid4
 
 import pytest
 
@@ -13,6 +14,7 @@ from voiceprobe.run_one import (
     prepare_one_call_contract,
 )
 from voiceprobe.telephony.ami import AsteriskAMIConfig
+from voiceprobe.telephony.asterisk_adapter import DEFAULT_FLUX_CONNECT_TIMEOUT_SECONDS
 
 
 def settings() -> Settings:
@@ -73,6 +75,23 @@ def test_transport_overrides_cannot_mutate_behavior_contract(monkeypatch) -> Non
 
     assert describe_one_call_behavior(prepared) == before
     assert before.runtime_owner == "FarthestDatePolicy"
+
+
+def test_transport_timeout_defaults_and_campaign_scalable_override() -> None:
+    call_id = uuid4()
+    ami_config = AsteriskAMIConfig(username="test", secret="synthetic")
+    ordinary = OneCallTransportOverrides(ami_config=ami_config)
+    campaign = run_campaign_case._campaign_transport_overrides(
+        ami_config=ami_config,
+        port=9200,
+        call_id=call_id,
+    )
+
+    assert ordinary.flux_connect_timeout_seconds is None
+    assert DEFAULT_FLUX_CONNECT_TIMEOUT_SECONDS == 10.0
+    assert campaign.flux_connect_timeout_seconds == 90.0
+    assert campaign.call_id_factory is not None
+    assert campaign.call_id_factory() == call_id
 
 
 def test_campaign_child_has_no_second_behavior_assembly_imports() -> None:

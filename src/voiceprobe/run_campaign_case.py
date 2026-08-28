@@ -42,6 +42,7 @@ from voiceprobe.run_one import (
     prepare_one_call_contract,
 )
 from voiceprobe.scenarios.catalog import list_scenarios
+from voiceprobe.telephony.ami import AsteriskAMIConfig
 from voiceprobe.telephony.asterisk_adapter import v3_live_enabled_from_environment
 from voiceprobe.telephony.audiosocket_dispatcher import validate_worker_port
 from voiceprobe.v3.runtime_dependencies import (
@@ -50,6 +51,19 @@ from voiceprobe.v3.runtime_dependencies import (
 )
 
 CASE_RESULT_PREFIX = "VOICEPROBE_CAMPAIGN_CASE_RESULT="
+CAMPAIGN_FLUX_CONNECT_TIMEOUT_SECONDS = 90.0
+
+
+def _campaign_transport_overrides(
+    *, ami_config: AsteriskAMIConfig, port: int, call_id: UUID
+) -> OneCallTransportOverrides:
+    """Build the campaign child's transport-only scalable startup allowance."""
+    return OneCallTransportOverrides(
+        ami_config=ami_config,
+        port=port,
+        call_id_factory=lambda: call_id,
+        flux_connect_timeout_seconds=CAMPAIGN_FLUX_CONNECT_TIMEOUT_SECONDS,
+    )
 
 
 def prepare_campaign_one_call(
@@ -237,10 +251,10 @@ def main() -> int:
         )
         transport = None
         if args.live:
-            transport = OneCallTransportOverrides(
+            transport = _campaign_transport_overrides(
                 ami_config=load_ami_config(args.ami_env),
                 port=worker_port,
-                call_id_factory=lambda: call_id,
+                call_id=call_id,
             )
         execution = execute_one_call(
             prepared,
